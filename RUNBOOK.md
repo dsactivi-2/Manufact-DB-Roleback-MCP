@@ -1,6 +1,6 @@
 # Runbook: noch einzurichten
 
-Stand: 7. Oktober 2026. Repo: https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP. Lokale Kopie: `/Users/activi/Documents/ChatGPT/Manufact-DB-Roleback-MCP`. Öffentliche MCP-Adresse: https://keen-forge-ldf39.run.mcp-use.com/mcp. Laufendes Deployment: `cbbcab9c-581e-448e-9913-1b3c2c348232`, Branch `main`, Status `running`. Die alte Adresse https://calm-forge-hk9rc.run.mcp-use.com/mcp gehört zu `cloud-crm-mcp` und wird hier nicht verwendet.
+Stand: 7. Oktober 2026. Repo: https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP. Lokale Kopie: `/Users/activi/Documents/ChatGPT/Manufact-DB-Roleback-MCP`. Öffentliche MCP-Adresse: https://keen-forge-ldf39.run.mcp-use.com/mcp. Aktives Deployment beim letzten Abgleich: `75435364-82bc-481b-afe2-a69fb6cbd400`, Commit `a499df3`, Status `running`. `cbbcab9c-581e-448e-9913-1b3c2c348232` ist gestoppt. Deployment `e257a0f5-0b5c-49f1-b866-df8b880ed33f` für Commit `7c1f4f5` war zu diesem Zeitpunkt noch `building`. Die alte Adresse https://calm-forge-hk9rc.run.mcp-use.com/mcp gehört zu `cloud-crm-mcp` und wird hier nicht verwendet.
 
 Änderungen an Manufact-Variablen gelten erst nach einem neuen Deployment.
 
@@ -69,6 +69,21 @@ Geprüft am 7. Oktober 2026. Der Server liest die öffentliche Adresse nicht aus
 
 ChatGPT, Codex und andere MCP-Clients müssen die neue Adresse verwenden. Der alte Server `cloud-crm-mcp` bleibt sonst getrennt erreichbar. Dieser Schritt liegt außerhalb des Repos und ist offen.
 
+
+## Unterschied zum alten Server
+
+Der alte Manufact-Server `cloud-crm-mcp` hängt an `dsactivi-2/Naufact-kopie-710-0232`, nicht an diesem Repo. Der Anwendungs-Source ist bis auf die hier geänderten Unterlagen gleich. Diese Servereinstellungen sind dort gesetzt und hier nicht. Sie waren im ersten Runbook nicht aufgeführt.
+
+| Einstellung | Alter Server | Dieser Server | Folge |
+|---|---|---|---|
+| Analytics `capturePayloads` | ein | nicht gesetzt | Payload-Erfassung ist hier nicht übernommen. |
+| Feedback-Tool | ein | nicht gesetzt | Das Feedback-Tool ist hier nicht übernommen. |
+| Checklisten-Automatik | `production` | nicht gesetzt | Nach einem Deployment läuft hier nicht automatisch die Publishing-Checkliste. |
+| IP-Allowlist | vorhanden, aus, Presets ChatGPT und Manufact an, Anthropic aus | nicht gesetzt | Ob das denselben Zugang ergibt, ist nicht geprüft. |
+| Build und Start | nur Port `3000` gespeichert | `npm run build`, `npm start`, Port `3000` | Entspricht `package.json`. |
+| Variablen | Token, `MCP_URL`, `CSP_URLS`, `CRM_DATABASE_URL`, WorkOS-Subdomain, `OAUTH_RESOURCE` | nur Token, `MCP_URL`, `CSP_URLS` | Datenbank und WorkOS fehlen hier. |
+
+Diese vier Einstellungen werden nicht automatisch vom alten Server kopiert. Sie bleiben offen, bis sie ausdrücklich für diesen Server gesetzt werden.
 ## Abnahme, noch offen
 
 - Werte von `MCP_URL` und `CSP_URLS` prüfen und bei Bedarf auf die neue Adresse setzen.
@@ -76,3 +91,4 @@ ChatGPT, Codex und andere MCP-Clients müssen die neue Adresse verwenden. Der al
 - `CRM_DATABASE_URL` setzen, Zertifikat klären, neu deployen.
 - WorkOS-Subdomain und `OAUTH_RESOURCE` setzen, neu deployen, Anmeldung prüfen.
 - Clients auf https://keen-forge-ldf39.run.mcp-use.com/mcp umstellen.
+- Analytics-Payload, Feedback-Tool, Checklisten-Automatik und IP-Allowlist vom alten Server nur übernehmen, wenn sie hier gewollt sind.
