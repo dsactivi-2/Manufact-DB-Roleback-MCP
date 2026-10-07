@@ -42,3 +42,7 @@ Thumbs.db
 *.swo
 *~
 
+# Worker local secrets
+.dev.vars
+.dev.vars.*
+.wrangler/
