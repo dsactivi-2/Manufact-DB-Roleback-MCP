@@ -1,0 +1,28 @@
+﻿{
+  "name": "manufact-db-rollback",
+  "main": "src/index.ts",
+  "account_id": "2f8c7ae79d6d316eac3961585f5c2f5b",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "vars": {
+    "ENVIRONMENT": "production",
+    "EXPECTED_DATABASE": "jsicrm",
+    "WRITES_ENABLED": "false",
+    "RESTORES_ENABLED": "false"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE_FRESH",
+      "id": "086fd3f6d396445eb3db0cb64f5ff9c7"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": false
+    }
+  }
+}

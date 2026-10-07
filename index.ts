@@ -2,6 +2,8 @@ import { MCPServer } from "mcp-use";
 import { z } from "zod";
 import { SQL_SCOPE, createOAuthProvider } from "./src/auth.js";
 import { openDatabase } from "./src/db.js";
+import { createWorkerClient } from "./src/worker-client.js";
+import type { ReadOperation } from "./contracts/read.js";
 import { assertSeparateInfrastructure } from "./src/guard.js";
 import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI, readGuide } from "./src/guides.js";
 import {
@@ -42,6 +44,12 @@ export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
   assertSeparateInfrastructure(env);
   databaseEnv = env;
   database = null;
+  if (env.CRM_TRANSPORT && !["direct", "cloudflare"].includes(env.CRM_TRANSPORT)) {
+    throw new Error("Nepoznat CRM_TRANSPORT.");
+  }
+  const worker = env.CRM_TRANSPORT === "cloudflare" ? createWorkerClient(env) : undefined;
+  const read = (operation: ReadOperation, args: unknown, legacy: () => Promise<unknown>) =>
+    worker ? worker.read(operation, args) : legacy();
   const oauth = createOAuthProvider(env);
   const config = {
     name: "cloud-crm-mcp",
@@ -90,63 +98,63 @@ server.app.use("/mcp", async (c, next) => {
     count_only: z.boolean().optional(),
   }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runCandidateSearch(db(), args)));
+}, async (args) => ok(await read("candidates", args, () => runCandidateSearch(db(), args))));
 
 server.tool({
   name: "crm_search_companies",
   description: "Firmen lesen, 50 Zeilen pro Seite.",
   inputSchema: z.object({ q: z.string().optional(), country: z.string().optional(), status: z.number().int().optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runCompanySearch(db(), args)));
+}, async (args) => ok(await read("companies", args, () => runCompanySearch(db(), args))));
 
 server.tool({
   name: "crm_search_nalozi",
   description: "Auftraege lesen, ohne SELECT *.",
   inputSchema: z.object({ q: z.string().optional(), status: z.number().int().optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runOrderSearch(db(), args)));
+}, async (args) => ok(await read("orders", args, () => runOrderSearch(db(), args))));
 
 server.tool({
   name: "crm_beruf_report",
   description: "Berufsreport. Sprache nur wenn sie genannt wird.",
   inputSchema: z.object({ begriffe: z.array(z.string()).min(1), archived: z.boolean().optional(), sprache: z.string().optional(), top_positionen: z.number().int().min(1).max(50).optional() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runBerufReport(db(), args)));
+}, async (args) => ok(await read("professions", args, () => runBerufReport(db(), args))));
 
 server.tool({
   name: "crm_resolve_beruf",
   description: "Berufsvarianten anzeigen. Startet selbst keine Kandidatensuche.",
   inputSchema: z.object({ begriff: z.string().min(1), archived: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runResolveBeruf(db(), args)));
+}, async (args) => ok(await read("resolve_profession", args, () => runResolveBeruf(db(), args))));
 
 server.tool({
   name: "crm_kandidat_profile",
   description: "Minimiertes Profil eines Kandidaten.",
   inputSchema: z.object({ kandidat_id: z.number().int().positive() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runProfile(db(), args.kandidat_id)));
+}, async (args) => ok(await read("profile", args, () => runProfile(db(), args.kandidat_id))));
 
 server.tool({
   name: "crm_stats",
   description: "Gesamtzahlen, ohne Seitengrenze.",
   inputSchema: z.object({}).strict(),
   annotations: readOnly,
-}, async () => ok(await runStats(db())));
+}, async () => ok(await read("stats", {}, () => runStats(db()))));
 
 server.tool({
   name: "crm_list_tables",
   description: "Erlaubte Tabellen auflisten.",
   inputSchema: z.object({ search: z.string().optional() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runListTables(db(), args.search)));
+}, async (args) => ok(await read("tables", args, () => runListTables(db(), args.search))));
 
 server.tool({
   name: "crm_describe_table",
   description: "Spalten einer erlaubten Tabelle.",
   inputSchema: z.object({ table: z.string() }).strict(),
   annotations: readOnly,
-}, async (args) => ok(await runDescribeTable(db(), args.table)));
+}, async (args) => ok(await read("describe", args, () => runDescribeTable(db(), args.table))));
 
 server.tool({
   name: "crm_query",
@@ -154,7 +162,7 @@ server.tool({
   inputSchema: z.object({ sql: z.string().min(1) }).strict(),
   annotations: readOnly,
   ...(oauth ? { securitySchemes: [{ type: "oauth2" as const, scopes: [SQL_SCOPE] }] } : {}),
-}, async (args) => ok(await runCrmQuery(db(), args.sql)));
+}, async (args) => ok(await read("query", args, () => runCrmQuery(db(), args.sql))));
 
 server.tool({
   name: "crm_search_guide",

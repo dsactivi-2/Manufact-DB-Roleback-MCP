@@ -165,9 +165,9 @@ export function buildCompanySearch(args: ListArgs = {}): ReadPlan {
 }
 
 export function buildOrderSearch(args: ListArgs = {}): ReadPlan {
-  return filteredRead("idk_nalozi", "nalog_id, nalog_naslov, nalog_opis, nalog_status", "nalog_id", args, (clauses, params) => {
+  return filteredRead("idk_nalozi", "nalog_id, nalog_naziv AS nalog_naslov, nalog_opis, nalog_status", "nalog_id", args, (clauses, params) => {
     if (args.q) {
-      clauses.push("(nalog_naslov LIKE ? OR nalog_opis LIKE ?)");
+      clauses.push("(nalog_naziv LIKE ? OR nalog_opis LIKE ?)");
       params.push("%" + args.q + "%", "%" + args.q + "%");
     }
     if (args.status !== undefined) {

@@ -42,3 +42,12 @@ Thumbs.db
 *.swo
 *~
 
+
+# Worker local secrets and generated artifacts
+.dev.vars
+.dev.vars.*
+.wrangler/
+.build/
+*client.local.cnf
+
+.gateway-runtime.local.json
