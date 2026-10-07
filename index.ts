@@ -1,0 +1,201 @@
+import { MCPServer } from "mcp-use";
+import { z } from "zod";
+import { SQL_SCOPE, createOAuthProvider } from "./src/auth.js";
+import { openDatabase } from "./src/db.js";
+import { assertSeparateInfrastructure } from "./src/guard.js";
+import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI, readGuide } from "./src/guides.js";
+import {
+  runBerufReport,
+  runCandidateSearch,
+  runCompanySearch,
+  runCrmQuery,
+  runDescribeTable,
+  runListTables,
+  runOrderSearch,
+  runProfile,
+  runResolveBeruf,
+  runStats,
+  type Db,
+} from "./src/read.js";
+
+const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
+let database: Db | null = null;
+let databaseEnv: NodeJS.ProcessEnv = process.env;
+
+export function setDatabase(next: Db | null): void {
+  database = next;
+}
+
+function db(): Db {
+  if (!database) {
+    if (!databaseEnv.CRM_DATABASE_URL) throw new Error("CRM_DATABASE_URL fehlt. Ein neuer, eigener Datenbankanschluss ist noch nicht gesetzt.");
+    database = openDatabase(databaseEnv);
+  }
+  return database;
+}
+
+function ok(data: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data) }], structuredContent: data };
+}
+
+export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
+  assertSeparateInfrastructure(env);
+  databaseEnv = env;
+  database = null;
+  const oauth = createOAuthProvider(env);
+  const config = {
+    name: "cloud-crm-mcp",
+    title: "Cloud CRM MCP",
+    version: "0.1.0",
+    description: "Read-only CRM MCP server on separate infrastructure.",
+    skills: true,
+  } as const;
+  const server = oauth ? new MCPServer({ ...config, oauth }) : new MCPServer(config);
+
+
+server.app.use("/mcp", async (c, next) => {
+    if (c.req.query("token")) return c.json({ error: "Token in der URL ist verboten." }, 401);
+    if (!oauth) {
+      const expected = env.CRM_MCP_SERVER_TOKEN ?? "";
+      if (!expected) return c.json({ error: "CRM_MCP_SERVER_TOKEN fehlt." }, 503);
+      if (c.req.header("authorization") !== "Bearer " + expected) return c.json({ error: "Nicht angemeldet." }, 401);
+    }
+    await next();
+  });
+
+  if (oauth) {
+    server.app.use("*", async (c, next) => {
+      if (c.req.path !== "/.well-known/oauth-protected-resource") return next();
+      const url = new URL(c.req.url);
+      url.pathname = "/.well-known/oauth-protected-resource/mcp";
+      return server.fetch(new Request(url, c.req.raw));
+    });
+  }
+
+  server.tool({
+  name: "crm_search_kandidaten",
+  description: "Kandidaten lesen. Geburtsdatum ist in jeder Zeile. Eine Seite hat 50 Zeilen.",
+  inputSchema: z.object({
+    name: z.string().optional(),
+    eu_buerger: z.boolean().optional(),
+    alter_von: z.number().int().optional(),
+    alter_bis: z.number().int().optional(),
+    position_text: z.string().optional(),
+    sprache: z.string().optional(),
+    niveau: z.string().optional(),
+    fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
+    archived: z.boolean().optional(),
+    page_size: z.number().int().min(1).max(50).optional(),
+    cursor: z.string().regex(/^[0-9]+$/).optional(),
+    count_only: z.boolean().optional(),
+  }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runCandidateSearch(db(), args)));
+
+server.tool({
+  name: "crm_search_companies",
+  description: "Firmen lesen, 50 Zeilen pro Seite.",
+  inputSchema: z.object({ q: z.string().optional(), country: z.string().optional(), status: z.number().int().optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runCompanySearch(db(), args)));
+
+server.tool({
+  name: "crm_search_nalozi",
+  description: "Auftraege lesen, ohne SELECT *.",
+  inputSchema: z.object({ q: z.string().optional(), status: z.number().int().optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runOrderSearch(db(), args)));
+
+server.tool({
+  name: "crm_beruf_report",
+  description: "Berufsreport. Sprache nur wenn sie genannt wird.",
+  inputSchema: z.object({ begriffe: z.array(z.string()).min(1), archived: z.boolean().optional(), sprache: z.string().optional(), top_positionen: z.number().int().min(1).max(50).optional() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runBerufReport(db(), args)));
+
+server.tool({
+  name: "crm_resolve_beruf",
+  description: "Berufsvarianten anzeigen. Startet selbst keine Kandidatensuche.",
+  inputSchema: z.object({ begriff: z.string().min(1), archived: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runResolveBeruf(db(), args)));
+
+server.tool({
+  name: "crm_kandidat_profile",
+  description: "Minimiertes Profil eines Kandidaten.",
+  inputSchema: z.object({ kandidat_id: z.number().int().positive() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runProfile(db(), args.kandidat_id)));
+
+server.tool({
+  name: "crm_stats",
+  description: "Gesamtzahlen, ohne Seitengrenze.",
+  inputSchema: z.object({}).strict(),
+  annotations: readOnly,
+}, async () => ok(await runStats(db())));
+
+server.tool({
+  name: "crm_list_tables",
+  description: "Erlaubte Tabellen auflisten.",
+  inputSchema: z.object({ search: z.string().optional() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runListTables(db(), args.search)));
+
+server.tool({
+  name: "crm_describe_table",
+  description: "Spalten einer erlaubten Tabelle.",
+  inputSchema: z.object({ table: z.string() }).strict(),
+  annotations: readOnly,
+}, async (args) => ok(await runDescribeTable(db(), args.table)));
+
+server.tool({
+  name: "crm_query",
+  description: "Ein lesendes SELECT. Eine Liste hat 50 Zeilen, eine Zaehlung bleibt vollstaendig.",
+  inputSchema: z.object({ sql: z.string().min(1) }).strict(),
+  annotations: readOnly,
+  ...(oauth ? { securitySchemes: [{ type: "oauth2" as const, scopes: [SQL_SCOPE] }] } : {}),
+}, async (args) => ok(await runCrmQuery(db(), args.sql)));
+
+server.tool({
+  name: "crm_search_guide",
+  description: "Regeln fuer die lesenden Werkzeuge, ohne Geheimnisse.",
+  inputSchema: z.object({}).strict(),
+  annotations: readOnly,
+}, async () => ok({
+  seite: 50,
+  zaehlung: "vollstaendig",
+  geburtsdatum: true,
+  eu_buerger: "false zaehlt leere Staatsangehoerigkeit mit",
+  verboten: ["SELECT *", "Token in der URL", "alte Worker-Infrastruktur", "Geschlecht", "Religion", "Gesundheit", "Herkunft"],
+  ressourcen: {
+    json: GUIDE_JSON_URI,
+    markdown: GUIDE_MARKDOWN_URI,
+  },
+  skill: "skill://crm-kandidatensuche/SKILL.md",
+}));
+
+server.resource({
+  name: "crm_search_guide_json",
+  uri: GUIDE_JSON_URI,
+  title: "CRM-Suchregeln",
+  description: "Strukturierte Regeln fuer Cloud CRM MCP, Version 1.2.0.",
+  mimeType: "application/json",
+}, (uri) => ({
+  contents: [{ uri: uri.href, mimeType: "application/json", text: readGuide("json") }],
+}));
+
+server.resource({
+  name: "crm_search_guide_markdown",
+  uri: GUIDE_MARKDOWN_URI,
+  title: "CRM-Suchleitfaden",
+  description: "Lesbarer Leitfaden fuer Cloud CRM MCP, Version 1.2.0.",
+  mimeType: "text/markdown",
+}, (uri) => ({
+  contents: [{ uri: uri.href, mimeType: "text/markdown", text: readGuide("markdown") }],
+}));
+
+  return server;
+}
+
+const server = createCloudCrmServer();
+export default server;

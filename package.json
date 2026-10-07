@@ -1,0 +1,37 @@
+{
+  "name": "cloud-crm-mcp",
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "version": "1.0.0",
+  "description": "Read-only Cloud CRM MCP server. Phase 1 tools, skill, and search guides are registered. MySQL is used only when CRM_DATABASE_URL is set.",
+  "author": "mcp-use",
+  "license": "MIT",
+  "homepage": "https://github.com/mcp-use/mcp-use",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "chatgpt plugins",
+    "claude connector",
+    "mcp-app",
+    "mcp-use",
+    "manufact"
+  ],
+  "scripts": {
+    "build": "mcp-use build",
+    "dev": "mcp-use dev",
+    "start": "mcp-use start",
+    "deploy": "mcp-use deploy",
+    "typecheck": "mcp-use typecheck",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {
+    "mcp-use": "2.7.3",
+    "mysql2": "^3.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "^7.0.2"
+  }
+}

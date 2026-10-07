@@ -1,0 +1,12 @@
+interface:
+  display_name: "CRM-Kandidatensuche"
+  short_description: "Kandidaten gezielt suchen und sicher filtern"
+  default_prompt: "Mujo udri — nutze $crm-kandidatensuche, um Kandidaten mit den genannten CRM-Filtern read-only zu suchen."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "cloud-crm-mcp"
+      description: "This read-only Cloud CRM MCP server. No public URL is assigned yet. Do not call the old Worker."
+      transport: "streamable_http"
+policy:
+  allow_implicit_invocation: true
