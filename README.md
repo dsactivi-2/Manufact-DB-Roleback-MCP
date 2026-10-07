@@ -31,11 +31,13 @@ When `OAUTH_ISSUER` is set, the server also requires `OAUTH_AUTHORIZATION_ENDPOI
 
 ## Deploy on Manufact Cloud
 
-Manufact hosts this repository. The public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp. The active production deployment is `82ea4657-f2b8-484f-b2e3-c731304eb8dc` on branch `main`, checked on 7 October 2026.
+Manufact hosts this repository. The public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp. Checked again on 7 October 2026: the running production deployment is `ff81c9cd-472b-4800-9ce8-d45c9b49b960`, branch `main`, commit `8b9440d9de5ead5c93f950b1a1b84c90c9a30078`. Deployment `82ea4657-f2b8-484f-b2e3-c731304eb8dc` is stopped.
 
 The earlier statement that deployment `c0be2dd3` was current on 6 October 2026 referred to the previous server `cloud-crm-mcp` at https://calm-forge-hk9rc.run.mcp-use.com/mcp. That address does not belong to this repository.
 
-`MCP_URL` and `OAUTH_RESOURCE` are set to https://keen-forge-ldf39.run.mcp-use.com/mcp. `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` is `balanced-lantern-65-staging.authkit.app`. The protected-resource metadata at the new address advertises that resource and AuthKit issuer. `CRM_DATABASE_URL` is still not set, so CRM tools cannot reach a database yet. Cloudflare remains a later option.
+`MCP_URL` and `OAUTH_RESOURCE` are set to https://keen-forge-ldf39.run.mcp-use.com/mcp. `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` is `balanced-lantern-65-staging.authkit.app`. `CRM_DATABASE_URL` is still not set on the running server. That is intentional until a separate test database exists. The known Aiven hosts and Hyperdrive configs `crm-mysql` and `jsimcp` are blocked in code and must not be copied here.
+
+The Cloudflare read/write path is implemented on `feature/cloudflare-history`, not on the running `main` deployment. Without `CRM_TRANSPORT=cloudflare` the existing read tools keep their direct MySQL path. Writes and history never use that direct path. Rollback is not live. See [docs/Arbeitsstand.md](docs/Arbeitsstand.md) and [RUNBOOK.md](RUNBOOK.md).
 
 Was noch eingesetzt werden muss, steht in [RUNBOOK.md](RUNBOOK.md).
 
