@@ -42,7 +42,6 @@ Thumbs.db
 *.swo
 *~
 
-
 # Worker local secrets and generated artifacts
 .dev.vars
 .dev.vars.*

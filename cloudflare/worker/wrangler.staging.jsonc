@@ -1,23 +1,17 @@
 {
-  "name": "manufact-db-rollback",
+  "name": "manufact-db-rollback-staging",
   "main": "../../src/worker/index.ts",
   "account_id": "2f8c7ae79d6d316eac3961585f5c2f5b",
   "compatibility_date": "2026-10-07",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "vars": {
-    "ENVIRONMENT": "production",
+    "ENVIRONMENT": "staging",
     "WRITES_ENABLED": "false",
     "RESTORES_ENABLED": "false",
     "REQUIRE_APPROVAL": "true",
     "ALLOW_TEST_ENTITIES": "false",
     "HISTORY_RETENTION_DAYS": "365"
   },
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE_FRESH",
-      "id": "086fd3f6d396445eb3db0cb64f5ff9c7"
-    }
-  ],
-  "observability": { "enabled": true, "logs": { "enabled": false } }
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
 }

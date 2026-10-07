@@ -12,7 +12,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 }});
 const { createWorkerClient, validateWorkerSettings } = await import("../src/worker-client.ts");
 const { buildOrderSearch } = await import("../src/sql.ts");
-const settings = { CRM_WORKER_BASE_URL: "https://gateway.example.com", CRM_WORKER_SERVICE_TOKEN: "a".repeat(48) };
+const settings = { CRM_TRANSPORT: "cloudflare", CRM_WORKER_BASE_URL: "https://gateway.example.com", CRM_WORKER_SERVICE_TOKEN: "a".repeat(48) };
 test("Worker prevoz zahtijeva siguran origin i vlastiti token", () => {
   assert.throws(() => validateWorkerSettings({ ...settings, CRM_WORKER_BASE_URL: "http://gateway.example.com" }));
   assert.throws(() => validateWorkerSettings({ ...settings, CRM_WORKER_BASE_URL: "https://token@gateway.example.com" }));
@@ -50,20 +50,23 @@ test("Nalozi koriste stvarnu kolonu uz postojeci naziv izlaza", () => {
 });
 test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () => {
   const { createCloudCrmServer } = await import("../index.ts");
-  const { handleRequest } = await import("../cloudflare/worker/src/index.ts");
+  const { handleWorker } = await import("../src/worker/http.ts");
   const originalFetch = globalThis.fetch;
   let gatewayCalls = 0;
   globalThis.fetch = (async (url, init) => {
     gatewayCalls++;
     assert.equal(String(url), "https://gateway.example.com/v1/read/stats");
-    return handleRequest(new Request(url, init), {
+    return handleWorker(new Request(url, init), {
       MCP_SERVICE_TOKEN: settings.CRM_WORKER_SERVICE_TOKEN, ENVIRONMENT: "production",
-      EXPECTED_DATABASE: "jsicrm", WRITES_ENABLED: "false", RESTORES_ENABLED: "false",
+      WRITES_ENABLED: "false", RESTORES_ENABLED: "false",
       HYPERDRIVE_FRESH: { host: "fake", port: 3306, user: "fake", password: "fake", database: "jsicrm" },
-    }, async () => ({
-      async query() { return [{ kandidaten: 4, aktiv: 3, firmen: 2, auftraege: 1 }]; },
-      async close() {},
-    }));
+    }, { host: "fake", openSession: async () => ({
+      async query(sql: string) {
+        if (sql.includes("DATABASE()")) return { rows: [{ selected_database: "jsicrm" }], affectedRows: 1 };
+        return { rows: [{ kandidaten: 4, aktiv: 3, firmen: 2, auftraege: 1 }], affectedRows: 1 };
+      },
+      async release() {},
+    }) });
   }) as typeof fetch;
   try {
     const server = createCloudCrmServer({ ...settings, CRM_TRANSPORT: "cloudflare", CRM_MCP_SERVER_TOKEN: "test-token" });

@@ -1,22 +1,24 @@
-# Cloudflare gateway — korak povezivanja
+# Cloudflare Worker
 
-Ovaj paket dodaje autentificirane tipizirane rute čitanja preko Hyperdrivea.
-Ne implementira još upis, historiju, restore ni R2 obradu. Oba prekidača ostaju false.
+Aktivni tok čitanja je:
 
-1. Cloudflare prijava: npx wrangler login
-2. Potvrditi račun 2f8c7ae79d6d316eac3961585f5c2f5b.
-3. Napraviti novi Hyperdrive na Aiven jsicrm, cache disabled, TLS VERIFY_IDENTITY.
-4. Unijeti njegov stvarni ID umjesto REPLACE_WITH_NEW_HYPERDRIVE_ID.
-5. Postaviti secret MCP_SERVICE_TOKEN.
-6. npm run typecheck; npm run build; npm run deploy.
-7. Na novom Manufact MCP-u postaviti CRM_TRANSPORT=cloudflare,
-   CRM_WORKER_BASE_URL i odgovarajući CRM_WORKER_SERVICE_TOKEN; objaviti razvojnu granu.
+`MCP → Worker → Hyperdrive → Aiven jsicrm`
 
-GET /health je javna provjera procesa i ne dokazuje DB vezu.
-POST /v1/read/stats s ispravnim servisnim tokenom provjerava DB put.
-Ostale rute: candidates, companies, orders, professions, resolve_profession, profile, tables, describe.
-Slobodni query privremeno vraća SQL_GATEWAY_DISABLED: treba parser i izričite dozvoljene kolone prije otvaranja na gatewayu.
-Vodiči MCP-a ostaju lokalni resursi.
+Worker koristi Hyperdrive `manufact-jsicrm-fresh`, isključen cache i TLS `VERIFY_IDENTITY`. Servisni token štiti sve rute. Read rute mogu koristiti zajednički MCP identitet, dok history, preview, apply i restore traže potpisani korisnički identitet.
 
-Nema direktnih DB tajni u MCP-u kada CRM_TRANSPORT=cloudflare.
-Servisni token nije korisnička dozvola upisa. Upise ne aktivirati prije zasebne provjerene implementacije.
+Objedinjeni kod implementira revizije, baseline, idempotentnost, approval, događaje historije, selektivni restore i outbox. Produkcijske zastavice ostaju:
+
+- `WRITES_ENABLED=false`
+- `RESTORES_ENABLED=false`
+- `REQUIRE_APPROVAL=true`
+- `ALLOW_TEST_ENTITIES=false`
+
+Slobodni SQL je zatvoren. R2 još nije povezan. Historija prati samo promjene koje prolaze kroz MCP forme.
+
+Provjera:
+
+```powershell
+npm run typecheck
+npm test
+npm run build
+```

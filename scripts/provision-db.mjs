@@ -45,6 +45,9 @@ async function main() {
       const identifiers = columns.map((c) => "`" + c + "`").join(", ");
       await admin.query("GRANT SELECT (" + identifiers + ") ON `jsicrm`.`" + table + "` TO ?@'%'", [runtime.user]);
     }
+    for (const table of ["rb_entity_state", "rb_field_state", "rb_baselines", "rb_events", "rb_requests", "rb_outbox", "rb_approvals"]) {
+      await admin.query("GRANT SELECT ON `jsicrm`.`" + table + "` TO ?@'%'", [runtime.user]);
+    }
   } finally { await admin.end(); }
   const reader = await mysql.createConnection({
     host: runtime.host, port: runtime.port, user: runtime.user, password: runtime.password,

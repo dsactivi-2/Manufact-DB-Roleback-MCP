@@ -31,11 +31,13 @@ When `OAUTH_ISSUER` is set, the server also requires `OAUTH_AUTHORIZATION_ENDPOI
 
 ## Deploy on Manufact Cloud
 
-Manufact hosts this repository. The public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp. The active production deployment is `82ea4657-f2b8-484f-b2e3-c731304eb8dc` on branch `main`, checked on 7 October 2026.
+Manufact hosts this repository. The public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp. The verified read deployment uses branch `feature/cloudflare-read-gateway-20261007` and reaches Aiven `jsicrm` through the Cloudflare Worker and Hyperdrive.
 
 The earlier statement that deployment `c0be2dd3` was current on 6 October 2026 referred to the previous server `cloud-crm-mcp` at https://calm-forge-hk9rc.run.mcp-use.com/mcp. That address does not belong to this repository.
 
-`MCP_URL` and `OAUTH_RESOURCE` are set to https://keen-forge-ldf39.run.mcp-use.com/mcp. `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` is `balanced-lantern-65-staging.authkit.app`. The protected-resource metadata at the new address advertises that resource and AuthKit issuer. `CRM_DATABASE_URL` is still not set, so CRM tools cannot reach a database yet. Cloudflare remains a later option.
+`CRM_TRANSPORT=cloudflare`, `CRM_WORKER_BASE_URL`, and `CRM_WORKER_SERVICE_TOKEN` connect the MCP to the Worker. The MCP does not need a database URL on this path.
+
+The history, approval, selective restore, and outbox implementation is merged with that connection. Production writes and restores stay disabled until field permissions and an approval flow pass an end-to-end test. See [docs/Arbeitsstand.md](docs/Arbeitsstand.md) and [RUNBOOK.md](RUNBOOK.md).
 
 Was noch eingesetzt werden muss, steht in [RUNBOOK.md](RUNBOOK.md).
 

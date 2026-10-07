@@ -8,7 +8,7 @@
     "build": "wrangler deploy --dry-run --outdir .build",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node --experimental-strip-types --test test/*.test.ts"
+    "test": "node --experimental-strip-types --test ../../test/architecture.test.ts"
   },
   "dependencies": {
     "mysql2": "3.15.3",

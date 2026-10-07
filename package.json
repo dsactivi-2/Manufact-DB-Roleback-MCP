@@ -5,7 +5,7 @@
     "node": ">=22.22.2"
   },
   "version": "1.0.0",
-  "description": "Read-only Cloud CRM MCP server. Phase 1 tools, skill, and search guides are registered. MySQL is used only when CRM_DATABASE_URL is set.",
+  "description": "Cloud CRM MCP with Cloudflare reads and protected history/rollback workflows.",
   "author": "mcp-use",
   "license": "MIT",
   "homepage": "https://github.com/mcp-use/mcp-use",
@@ -24,7 +24,8 @@
     "start": "mcp-use start",
     "deploy": "mcp-use deploy",
     "typecheck": "mcp-use typecheck",
-    "test": "node --experimental-strip-types --test test/*.test.ts"
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test:mysql": "node --experimental-strip-types --test test/mysql/history.mysql.test.ts"
   },
   "dependencies": {
     "mcp-use": "2.7.3",

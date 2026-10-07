@@ -16,9 +16,7 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "src/**/*.ts",
     "../../contracts/**/*.ts",
-    "../../src/read.ts",
-    "../../src/sql.ts"
+    "../../src/**/*.ts"
   ]
 }

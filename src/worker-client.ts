@@ -1,44 +1,56 @@
-import { isReadOperation, readSchemas, type ReadOperation } from "../contracts/read.js";
+import { readSchemas, type ReadOperation } from "../contracts/read.js";
+import { sha256 } from "./canonical.js";
+import { actorFromSharedToken, signAssertion, WORKER_AUDIENCE, type Actor } from "./identity.js";
 
-export function validateWorkerSettings(env: NodeJS.ProcessEnv): URL {
+const MAX_RESPONSE = 2 * 1024 * 1024;
+const READ_PATHS: Record<ReadOperation, string> = {
+  candidates: "/v1/read/candidates", companies: "/v1/read/companies", orders: "/v1/read/orders",
+  professions: "/v1/read/professions", resolve_profession: "/v1/read/resolve_profession",
+  profile: "/v1/read/profile", stats: "/v1/read/stats", tables: "/v1/read/tables",
+  describe: "/v1/read/describe", query: "/v1/read/query",
+};
+
+export function validateWorkerSettings(env: NodeJS.ProcessEnv) {
   const address = env.CRM_WORKER_BASE_URL;
   const token = env.CRM_WORKER_SERVICE_TOKEN;
   if (!address || !token || token.length < 32) throw new Error("Nedostaje Worker adresa ili servisni token.");
-  const url = new URL(address);
-  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+  const base = new URL(address);
+  if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash || base.pathname !== "/") {
     throw new Error("Worker mora imati HTTPS origin bez putanje ili pristupnih podataka.");
   }
-  return url;
+  return { base, token };
 }
 
-export function createWorkerClient(env: NodeJS.ProcessEnv, fetcher: typeof fetch = fetch) {
-  const base = validateWorkerSettings(env);
+export function createWorkerClient(env: NodeJS.ProcessEnv, fetchImpl: typeof fetch = fetch) {
+  const { base, token } = validateWorkerSettings(env);
+  const privateKey = env.CRM_IDENTITY_ASSERTION_PRIVATE_KEY ?? "";
+  async function post(path: string, input: unknown, actor: Actor): Promise<unknown> {
+    if (env.CRM_TRANSPORT !== "cloudflare") throw new Error("CRM_TRANSPORT=cloudflare nije aktivan.");
+    if (!/^\/v1\/(read|changes|restores|history)\/[a-z_]+$/.test(path)) throw new Error("Nepoznata Worker ruta.");
+    const raw = JSON.stringify(input ?? {});
+    const headers: Record<string, string> = { authorization: "Bearer " + token, "content-type": "application/json" };
+    if (privateKey) headers["x-crm-identity"] = await signAssertion(privateKey, { actor, audience: WORKER_AUDIENCE, requestSha256: sha256(raw) });
+    else if (!path.startsWith("/v1/read/")) throw new Error("CRM_IDENTITY_ASSERTION_PRIVATE_KEY nedostaje.");
+    let response: Response;
+    try {
+      response = await fetchImpl(new URL(path, base), { method: "POST", redirect: "error", headers, body: raw, signal: AbortSignal.timeout(25_000) });
+    } catch { throw new Error("DEPENDENCY_UNAVAILABLE"); }
+    const text = await response.text();
+    if (Number(response.headers.get("content-length")) > MAX_RESPONSE || new TextEncoder().encode(text).length > MAX_RESPONSE) throw new Error("RESULT_TOO_LARGE");
+    let payload: { ok?: boolean; result?: unknown; data?: unknown; error?: { code?: string } };
+    try { payload = JSON.parse(text); } catch { throw new Error("INVALID_WORKER_RESPONSE"); }
+    if (!response.ok || payload.ok === false) {
+      const code = payload.error?.code;
+      throw new Error(typeof code === "string" && /^[A-Z0-9_]{1,64}$/.test(code) ? code : "DEPENDENCY_UNAVAILABLE");
+    }
+    if (Object.hasOwn(payload, "result")) return payload.result;
+    if (Object.hasOwn(payload, "data")) return payload.data;
+    throw new Error("INVALID_WORKER_RESPONSE");
+  }
   return {
-    async read(operation: ReadOperation, input: unknown): Promise<unknown> {
-      if (!isReadOperation(operation)) throw new Error("Nepoznata operacija.");
-      const args = readSchemas[operation].parse(input);
-      let response: Response;
-      try {
-        response = await fetcher(new URL("/v1/read/" + operation, base), {
-          method: "POST", redirect: "error",
-          headers: { "content-type": "application/json", authorization: "Bearer " + env.CRM_WORKER_SERVICE_TOKEN },
-          body: JSON.stringify(args), signal: AbortSignal.timeout(25000),
-        });
-      } catch {
-        throw new Error("DEPENDENCY_UNAVAILABLE: Worker nije dostupan.");
-      }
-      const length = Number(response.headers.get("content-length"));
-      if (length > 2 * 1024 * 1024) throw new Error("Worker odgovor je prevelik.");
-      const body = await response.text();
-      if (new TextEncoder().encode(body).length > 2 * 1024 * 1024) throw new Error("Worker odgovor je prevelik.");
-      let result: { data?: unknown; error?: { code?: string } };
-      try { result = JSON.parse(body); } catch { throw new Error("Neispravan Worker odgovor."); }
-      if (!response.ok) {
-        const code = result.error?.code;
-        throw new Error(typeof code === "string" && /^[A-Z_]{1,64}$/.test(code) ? code : "DEPENDENCY_UNAVAILABLE");
-      }
-      if (!Object.prototype.hasOwnProperty.call(result, "data")) throw new Error("Neispravan Worker odgovor.");
-      return result.data;
+    async read(operation: ReadOperation, input: unknown, actor: Actor = actorFromSharedToken()) {
+      return post(READ_PATHS[operation], readSchemas[operation].parse(input), actor);
     },
+    post,
   };
 }
