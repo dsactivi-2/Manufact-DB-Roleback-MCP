@@ -43,7 +43,8 @@ Historija obuhvata samo promjene koje prolaze kroz MCP forme. Direktne izmjene d
 
 Objedinjeni Worker je objavljen kao verzija `a4b402e6-c191-4eda-a4d7-a9a96d2fe25e`. Sve specijalizirane read rute i agregatni stats vraćaju 200. Potpisani history-list vraća 200, a apply vraća `WRITES_DISABLED` (403).
 
-1. Objaviti objedinjeni MCP kod i potvrditi read/history poziv kroz javni MCP.
-2. Odrediti tačna polja koja MCP forme smiju mijenjati i dodijeliti minimalna DB prava.
-3. Provesti kontrolisani preview/apply/history/restore test prije uključivanja produkcijskih upisa.
-4. Kreirati zaseban R2 audit bucket i povezati outbox obradu.
+Objedinjeni MCP deployment `4c699590-2d2f-4c0e-aec7-0768b5bef18c` pokrenut je sa commitom `9d8abd6`. Javni `crm_stats` i potpisani `crm_history_list` vraćaju 200 kroz cijeli tok.
+
+1. Odrediti tačna polja koja MCP forme smiju mijenjati i dodijeliti minimalna DB prava.
+2. Završiti approval formu i provesti kontrolisani preview/apply/history/restore test.
+3. Kreirati zaseban R2 audit bucket i povezati outbox obradu.
