@@ -1,6 +1,6 @@
 # CRM-Kandidatensuche — verbindlicher Leitfaden
 
-Version: 1.2.0. Dieser Guide gehört zum Server Cloud CRM MCP. Er ist aus dem Plugin-Guide 1.1.0 übernommen und an die beschlossenen Seitenregeln angepasst. Er ist kein Nachweis eines Deployments. Strukturierte Regeln: Ressource `crm://guides/crm_search_guide.json`. Die alte Worker-Adresse gehört nicht zu diesem Server.
+Version: 1.2.0. Dieser Guide gehört zum Server Cloud CRM MCP. Er ist aus dem Plugin-Guide 1.1.0 übernommen und an die beschlossenen Seitenregeln angepasst. Die laufende Manufact-Adresse dieses Repos ist https://keen-forge-ldf39.run.mcp-use.com/mcp und steht im README. Dieser Guide beweist keine Datenbankverbindung. Strukturierte Regeln: Ressource `crm://guides/crm_search_guide.json`. Die alte Worker-Adresse und https://calm-forge-hk9rc.run.mcp-use.com/mcp gehören nicht zu diesem Server.
 
 ## Vorrang und Umfang
 

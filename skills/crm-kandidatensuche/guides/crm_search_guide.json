@@ -126,7 +126,9 @@
     "mention_material_scope_only": true,
     "never_claim_unverified_completeness": true
   },
-  "deployment_status": "prepared_not_deployed",
+  "deployment_status": "manufact_running_database_not_configured",
+  "mcp_url": "https://keen-forge-ldf39.run.mcp-use.com/mcp",
+  "replaced_host": "https://calm-forge-hk9rc.run.mcp-use.com/mcp",
   "precedence": [
     "server_authorization_and_privacy",
     "explicit_user_scope",

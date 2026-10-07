@@ -31,7 +31,11 @@ When `OAUTH_ISSUER` is set, the server also requires `OAUTH_AUTHORIZATION_ENDPOI
 
 ## Deploy on Manufact Cloud
 
-Manufact is the temporary host. Deployment c0be2dd3 is the running deployment checked on 6 October 2026. The WorkOS Staging AuthKit address turns discovery on. Cloudflare remains a later option. CRM_DATABASE_URL is not a production variable yet.
+Manufact hosts this repository. The running production deployment is `cbbcab9c-581e-448e-9913-1b3c2c348232` on branch `main`, checked on 7 October 2026. Its public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp.
+
+The earlier statement that deployment `c0be2dd3` was current on 6 October 2026 referred to the previous server `cloud-crm-mcp` at https://calm-forge-hk9rc.run.mcp-use.com/mcp. That address does not belong to this repository.
+
+WorkOS discovery is not enabled on this deployment. The saved production variable names are `CRM_MCP_SERVER_TOKEN`, `MCP_URL`, and `CSP_URLS`; their values were not copied into this document. `CRM_DATABASE_URL` is still not set, so CRM tools cannot reach a database yet. Cloudflare remains a later option.
 
 ```bash
 npm run deploy

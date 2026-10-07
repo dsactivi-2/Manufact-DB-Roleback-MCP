@@ -2,7 +2,7 @@
 
 The server should expose focused read-only tools rather than arbitrary database access. Existing expected tools include `crm_search_kandidaten`, `crm_kandidat_profile`, `crm_stats`, `crm_beruf_report`, `crm_resolve_beruf`, `crm_search_companies`, `crm_search_nalozi`, `crm_search_guide`, `crm_list_tables`, `crm_describe_table`, and restricted `crm_query`.
 
-These tools are the phase-1 contract of this Cloud CRM MCP server. The old Worker under `worker-source/` is not this server and must not be called. Its old page caps are not copied here. The guides for this server are `crm://guides/crm_search_guide.json` and `crm://guides/crm_search_guide.md`. Nothing here proves a deployment or a live database connection.
+These tools are the phase-1 contract of this Cloud CRM MCP server. The old Worker under `worker-source/` is not this server and must not be called. Its old page caps are not copied here. The guides for this server are `crm://guides/crm_search_guide.json` and `crm://guides/crm_search_guide.md`. The running Manufact address for this repository is https://keen-forge-ldf39.run.mcp-use.com/mcp, recorded in the README. This file does not prove a live database connection. The previous address https://calm-forge-hk9rc.run.mcp-use.com/mcp belongs to `cloud-crm-mcp`, not to this server.
 
 ## Required server behavior
 
