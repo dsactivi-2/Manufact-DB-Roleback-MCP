@@ -1,0 +1,10 @@
+﻿import {g as CloudApi} from '../node_modules/@mcp-use/cli/dist/chunk-2E4ZVDXN.js';
+const api=await CloudApi.create();
+const vars=await api.request('/servers/77a6298d-34e9-4d70-9454-d47c8d300361/env-variables');
+const token=vars.find(v=>v.key==='CRM_MCP_SERVER_TOKEN')?.value;
+if(typeof token!=='string'||!token){console.log(JSON.stringify({tested:false,reason:'MCP_AUTH_TOKEN_NOT_READABLE'}));process.exit(2);}
+const headers=new Headers({authorization:'Bearer '+token,accept:'application/json, text/event-stream','content-type':'application/json'});
+const url='https://keen-forge-ldf39.run.mcp-use.com/mcp';
+async function call(id,method,params){const response=await fetch(url,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',id,method,params}),signal:AbortSignal.timeout(35000)});const session=response.headers.get('mcp-session-id');if(session)headers.set('mcp-session-id',session);const text=await response.text();const data=text.startsWith('{')?text:text.split('\n').find(l=>l.startsWith('data: '))?.slice(6);if(!data)throw new Error('NON_MCP_RESPONSE_'+response.status);return{status:response.status,message:JSON.parse(data)};}
+try{const init=await call(1,'initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'gateway-live-test',version:'1'}});console.log(JSON.stringify({check:'initialize',status:init.status,ok:Boolean(init.message.result)}));const stats=await call(2,'tools/call',{name:'crm_stats',arguments:{}});console.log(JSON.stringify({check:'crm_stats',status:stats.status,isError:stats.message.result?.isError,errorCodes:stats.message.result?.isError ? JSON.stringify(stats.message.result.content).match(/AUTH_REQUIRED|DEPENDENCY_UNAVAILABLE|CRM_DATABASE_URL|INVALID_INPUT|SERVICE_NOT_CONFIGURED|SQL_GATEWAY_DISABLED/g) : undefined,result:stats.message.result?.structuredContent}));if(stats.status!==200||stats.message.error||stats.message.result?.isError)process.exitCode=1;}catch(e){console.log(JSON.stringify({ok:false,code:/^[A-Z0-9_]+$/.test(e.message)?e.message:'MCP_SMOKE_FAILED'}));process.exitCode=1;}
+

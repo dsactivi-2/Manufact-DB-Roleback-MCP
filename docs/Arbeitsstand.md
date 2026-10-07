@@ -85,3 +85,14 @@ Live test: health 200, neautorizovani upit 401, autorizovani stats 200.
 22 MCP i 6 Worker testova prolaze, MCP build i Worker typecheck prolaze.
 MCP hosting prijava potvrđena; konfiguracija postojećeg servera se ažurira.
 Historija, upis, restore i R2 proces još nisu implementirani; WRITES_ENABLED i RESTORES_ENABLED su false.
+
+## MCP spoj potvrđen
+07.10.2026. javni MCP crm_stats vratio je agregatne rezultate iz jsicrm preko Workera i Hyperdrivea.
+MCP URL: https://keen-forge-ldf39.run.mcp-use.com/mcp
+Aktivna objava: 3af02300-d76f-4e9b-9159-78539cfbd30a, commit c21598f.
+Produkcijska grana: feature/cloudflare-read-gateway-20261007.
+Sve osam dodatnih read ruta vraćaju 200 u probama bez prikaza pojedinačnih zapisa.
+Postojeća grana feature/cloudflare-history s nacrtom historije nije prepisana.
+Slobodni SQL je zatvoren (403); specijalizirane read rute rade.
+Naredna faza je integracija nacrta historije, identiteta i odobrenja te kontrolisani test upisa/restorea i R2 arhive.
+CRM izmjene s Hetznera još nemaju automatsko praćenje; za njih je potrebna posebna integracija.
