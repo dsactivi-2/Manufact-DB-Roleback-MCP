@@ -41,7 +41,9 @@ Historija obuhvata samo promjene koje prolaze kroz MCP forme. Direktne izmjene d
 
 ## Preostalo
 
-1. Objaviti objedinjeni Worker uz isključene write/restore zastavice i potvrditi read i history-list put.
+Objedinjeni Worker je objavljen kao verzija `a4b402e6-c191-4eda-a4d7-a9a96d2fe25e`. Sve specijalizirane read rute i agregatni stats vraćaju 200. Potpisani history-list vraća 200, a apply vraća `WRITES_DISABLED` (403).
+
+1. Objaviti objedinjeni MCP kod i potvrditi read/history poziv kroz javni MCP.
 2. Odrediti tačna polja koja MCP forme smiju mijenjati i dodijeliti minimalna DB prava.
 3. Provesti kontrolisani preview/apply/history/restore test prije uključivanja produkcijskih upisa.
 4. Kreirati zaseban R2 audit bucket i povezati outbox obradu.
