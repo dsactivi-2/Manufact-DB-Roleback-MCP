@@ -6,7 +6,7 @@ dependencies:
   tools:
     - type: "mcp"
       value: "cloud-crm-mcp"
-      description: "This read-only Cloud CRM MCP server. No public URL is assigned yet. Do not call the old Worker."
+      description: "This read-only Cloud CRM MCP server at https://keen-forge-ldf39.run.mcp-use.com/mcp. Do not call the old Worker or https://calm-forge-hk9rc.run.mcp-use.com/mcp."
       transport: "streamable_http"
 policy:
   allow_implicit_invocation: true

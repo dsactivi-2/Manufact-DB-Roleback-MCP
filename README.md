@@ -37,6 +37,8 @@ The earlier statement that deployment `c0be2dd3` was current on 6 October 2026 r
 
 WorkOS discovery is not enabled on this deployment. The saved production variable names are `CRM_MCP_SERVER_TOKEN`, `MCP_URL`, and `CSP_URLS`; their values were not copied into this document. `CRM_DATABASE_URL` is still not set, so CRM tools cannot reach a database yet. Cloudflare remains a later option.
 
+Was noch eingesetzt werden muss, steht in [RUNBOOK.md](RUNBOOK.md).
+
 ```bash
 npm run deploy
 ```
