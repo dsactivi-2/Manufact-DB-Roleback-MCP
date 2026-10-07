@@ -70,4 +70,20 @@ test("Worker trennt Health, Lesetoken und produktives Schema", async () => {
   assert.equal(deleted.status, 400);
   const deletedBody = await deleted.json() as { error: { code: string } };
   assert.equal(deletedBody.error.code, "INVALID_INPUT");
+
+  const missingAssertion = await handleWorker(new Request("https://worker.test/v1/read/stats", { method: "POST", headers: { authorization: "Bearer svc", "content-type": "application/json" }, body: "{}" }), env);
+  assert.equal(missingAssertion.status, 401);
+  const missingAssertionBody = await missingAssertion.json() as { error: { code: string } };
+  assert.equal(missingAssertionBody.error.code, "AUTH_REQUIRED");
+
+  const expired = await signAssertion(privatePem, { actor: actorFromSharedToken(), audience: WORKER_AUDIENCE, requestSha256: sha256("{}"), now: new Date(Date.now() - 120_000) });
+  const expiredAssertion = await handleWorker(new Request("https://worker.test/v1/read/stats", { method: "POST", headers: { authorization: "Bearer svc", "x-crm-identity": expired, "content-type": "application/json" }, body: "{}" }), env);
+  assert.equal(expiredAssertion.status, 401);
+  const expiredBody = await expiredAssertion.json() as { error: { code: string } };
+  assert.equal(expiredBody.error.code, "AUTH_REQUIRED");
+
+  const noKey = await handleWorker(new Request("https://worker.test/v1/read/stats", { method: "POST", headers: { authorization: "Bearer svc", "x-crm-identity": expired, "content-type": "application/json" }, body: "{}" }), { ...env, IDENTITY_ASSERTION_PUBLIC_KEY: "" });
+  assert.equal(noKey.status, 503);
+  const noKeyBody = await noKey.json() as { error: { code: string } };
+  assert.equal(noKeyBody.error.code, "DEPENDENCY_UNAVAILABLE");
 });

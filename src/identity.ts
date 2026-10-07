@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { sha256 } from "./canonical.js";
+import { CrmError } from "./crm-error.js";
 
 export interface Actor {
   issuer: string;
@@ -59,24 +60,34 @@ export async function signAssertion(privatePem: string, input: AssertionInput): 
 
 export async function verifyAssertion(publicPem: string, token: string, expected: { audience: string; requestSha256: string; now?: Date }): Promise<Actor> {
   const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("Identitaetsnachweis ist ungueltig.");
+  if (parts.length !== 3) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
   const header = parts[0] ?? "";
   const payloadPart = parts[1] ?? "";
   const signature = parts[2] ?? "";
-  if (header !== HEADER) throw new Error("Identitaetsnachweis ist ungueltig.");
-  const key = await crypto.subtle.importKey("spki", pemToDer(publicPem), { name: "Ed25519" }, false, ["verify"]);
+  if (header !== HEADER) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
+  let key: CryptoKey;
+  try {
+    key = await crypto.subtle.importKey("spki", pemToDer(publicPem), { name: "Ed25519" }, false, ["verify"]);
+  } catch {
+    throw new CrmError("DEPENDENCY_UNAVAILABLE", "Identitaetspruefung ist nicht verfuegbar.", 503);
+  }
   const valid = await crypto.subtle.verify({ name: "Ed25519" }, key, Buffer.from(signature, "base64url"), Buffer.from(header + "." + payloadPart));
-  if (!valid) throw new Error("Identitaetsnachweis ist ungueltig.");
-  const claims = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as Record<string, unknown>;
+  if (!valid) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
+  let claims: Record<string, unknown>;
+  try {
+    claims = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as Record<string, unknown>;
+  } catch {
+    throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
+  }
   const now = Math.floor((expected.now ?? new Date()).getTime() / 1000);
-  if (claims.iss !== MCP_ISSUER || claims.aud !== expected.audience) throw new Error("Identitaetsnachweis ist ungueltig.");
-  if (typeof claims.exp !== "number" || claims.exp < now - 5) throw new Error("Identitaetsnachweis ist abgelaufen.");
-  if (typeof claims.iat !== "number" || claims.iat > now + 30) throw new Error("Identitaetsnachweis ist ungueltig.");
-  if (claims.request_sha256 !== expected.requestSha256) throw new Error("Identitaetsnachweis passt nicht zur Anfrage.");
+  if (claims.iss !== MCP_ISSUER || claims.aud !== expected.audience) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
+  if (typeof claims.exp !== "number" || claims.exp < now - 5) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist abgelaufen.", 401);
+  if (typeof claims.iat !== "number" || claims.iat > now + 30) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
+  if (claims.request_sha256 !== expected.requestSha256) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis passt nicht zur Anfrage.", 401);
   const subject = typeof claims.sub === "string" ? claims.sub : "";
   const scopes = typeof claims.scope === "string" ? claims.scope.split(" ").filter(Boolean) : [];
-  if (!subject) throw new Error("Identitaetsnachweis ist ungueltig.");
-  if (subject === "shared-token" && scopes.includes("crm:write")) throw new Error("Ein Lesetoken bekommt keine Schreibrolle.");
+  if (!subject) throw new CrmError("AUTH_REQUIRED", "Identitaetsnachweis ist ungueltig.", 401);
+  if (subject === "shared-token" && scopes.includes("crm:write")) throw new CrmError("AUTH_REQUIRED", "Ein Lesetoken bekommt keine Schreibrolle.", 401);
   return { issuer: MCP_ISSUER, subject, scopes };
 }
 
