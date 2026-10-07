@@ -5,7 +5,7 @@ description: Search, filter, count, and analyze candidate, profession, language,
 
 # CRM candidate search
 
-Use this Cloud CRM MCP server only within the user's requested scope. All access is read-only. Do not call the old Worker.
+The server address is https://keen-forge-ldf39.run.mcp-use.com/mcp. Use this Cloud CRM MCP server only within the user's requested scope. All access is read-only. Do not call the old Worker.
 
 ## Beta trigger
 

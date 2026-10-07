@@ -1,24 +1,27 @@
 # Runbook: noch einzurichten
 
-Stand: 7. Oktober 2026. Repo: https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP. Lokale Kopie: `/Users/activi/Documents/ChatGPT/Manufact-DB-Roleback-MCP`. Öffentliche MCP-Adresse: https://keen-forge-ldf39.run.mcp-use.com/mcp. Aktives Deployment beim letzten Abgleich: `75435364-82bc-481b-afe2-a69fb6cbd400`, Commit `a499df3`, Status `running`. `cbbcab9c-581e-448e-9913-1b3c2c348232` ist gestoppt. Deployment `e257a0f5-0b5c-49f1-b866-df8b880ed33f` für Commit `7c1f4f5` war zu diesem Zeitpunkt noch `building`. Die alte Adresse https://calm-forge-hk9rc.run.mcp-use.com/mcp gehört zu `cloud-crm-mcp` und wird hier nicht verwendet.
+Stand: 7. Oktober 2026. Repo: https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP. Lokale Kopie: `/Users/activi/Documents/ChatGPT/Manufact-DB-Roleback-MCP`. Öffentliche MCP-Adresse: https://keen-forge-ldf39.run.mcp-use.com/mcp. Aktives Deployment: `82ea4657-f2b8-484f-b2e3-c731304eb8dc`, Commit `dcc5eba`, Status `running`. Die alte Adresse https://calm-forge-hk9rc.run.mcp-use.com/mcp gehört zu `cloud-crm-mcp` und wird hier nicht verwendet.
 
 Änderungen an Manufact-Variablen gelten erst nach einem neuen Deployment.
 
 ## Bereits vorhanden
 
 - Der Server läuft und die Adresse oben ist die Manufact-Adresse.
-- Gespeicherte Variablennamen: `CRM_MCP_SERVER_TOKEN`, `MCP_URL`, `CSP_URLS`. Die Werte wurden nicht ausgelesen. Ob `MCP_URL` und `CSP_URLS` schon die neue Adresse enthalten, ist deshalb offen.
-- `CRM_DATABASE_URL`, `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` und `OAUTH_RESOURCE` sind auf diesem Server nicht gespeichert.
+- `MCP_URL` und `OAUTH_RESOURCE` sind auf https://keen-forge-ldf39.run.mcp-use.com/mcp gesetzt.
+- `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` ist `balanced-lantern-65-staging.authkit.app`.
+- `CRM_MCP_SERVER_TOKEN` ist vorhanden. Der Wert wurde nicht ausgelesen.
+- `CSP_URLS` hat keinen änderbaren Variablen-Eintrag. Der Wert wurde nicht ausgelesen.
+- `CRM_DATABASE_URL` fehlt.
 
 ## Manufact-Variablen
 
 | Variable | Status | Was eingesetzt werden muss |
 |---|---|---|
 | `CRM_MCP_SERVER_TOKEN` | Name vorhanden, Wert ungeprüft | Neuer Bearer-Token nur für diesen Server. Nicht den Token von `cloud-crm-mcp` wiederverwenden. Nicht ins Repo schreiben. |
-| `MCP_URL` | Name vorhanden, Wert ungeprüft | `https://keen-forge-ldf39.run.mcp-use.com/mcp`, falls der gespeicherte Wert noch auf die alte Adresse zeigt. |
+| `MCP_URL` | gesetzt | `https://keen-forge-ldf39.run.mcp-use.com/mcp` |
 | `CSP_URLS` | Name vorhanden, Wert ungeprüft | Dieser Source liest `CSP_URLS` nicht. Falls der Wert `calm-forge-hk9rc` enthält, durch `keen-forge-ldf39` ersetzen. |
-| `OAUTH_RESOURCE` | fehlt | Für WorkOS verpflichtend, wenn `MCP_URL` nicht dieselbe neue Adresse enthält: `https://keen-forge-ldf39.run.mcp-use.com/mcp`. Der Pfad muss `/mcp` sein. |
-| `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` | fehlt | Nur die AuthKit-Adresse, zum Beispiel `name.authkit.app`. HTTPS, keine Pfadangabe, Host muss auf `.authkit.app` enden. |
+| `OAUTH_RESOURCE` | gesetzt | `https://keen-forge-ldf39.run.mcp-use.com/mcp` |
+| `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` | gesetzt | `balanced-lantern-65-staging.authkit.app` |
 | `CRM_DATABASE_URL` | fehlt | `mysql://BENUTZER:PASSWORT@HOST:PORT/DATENBANK`. Host, Datenbank, Benutzer und Passwort sind Pflicht. |
 
 Nicht setzen: `OAUTH_CLIENT_SECRET`. Der Server verwendet es nicht. `CRM_HYPERDRIVE_ID` und `DATABASE_URL` werden nicht als Anschluss gelesen. Sie dürfen die Marker `00184318f6854e1788f6061e24eaf24f` und `crm-pipedrive-worker` nicht enthalten, sonst stoppt der Start.
@@ -76,19 +79,17 @@ Der alte Manufact-Server `cloud-crm-mcp` hängt an `dsactivi-2/Naufact-kopie-710
 
 | Einstellung | Alter Server | Dieser Server | Folge |
 |---|---|---|---|
-| Analytics `capturePayloads` | ein | nicht gesetzt | Payload-Erfassung ist hier nicht übernommen. |
-| Feedback-Tool | ein | nicht gesetzt | Das Feedback-Tool ist hier nicht übernommen. |
-| Checklisten-Automatik | `production` | nicht gesetzt | Nach einem Deployment läuft hier nicht automatisch die Publishing-Checkliste. |
-| IP-Allowlist | vorhanden, aus, Presets ChatGPT und Manufact an, Anthropic aus | nicht gesetzt | Ob das denselben Zugang ergibt, ist nicht geprüft. |
+| Analytics `capturePayloads` | ein | ein | übernommen |
+| Feedback-Tool | ein | ein | übernommen |
+| Checklisten-Automatik | `production` | `production` | übernommen |
+| IP-Allowlist | vorhanden, aus, Presets ChatGPT und Manufact an, Anthropic aus | gleich gesetzt | übernommen, Allowlist bleibt aus |
 | Build und Start | nur Port `3000` gespeichert | `npm run build`, `npm start`, Port `3000` | Entspricht `package.json`. |
-| Variablen | Token, `MCP_URL`, `CSP_URLS`, `CRM_DATABASE_URL`, WorkOS-Subdomain, `OAUTH_RESOURCE` | nur Token, `MCP_URL`, `CSP_URLS` | Datenbank und WorkOS fehlen hier. |
+| Variablen | Token, `MCP_URL`, `CSP_URLS`, `CRM_DATABASE_URL`, WorkOS-Subdomain, `OAUTH_RESOURCE` | Token, `MCP_URL`, `CSP_URLS`, WorkOS-Subdomain, `OAUTH_RESOURCE` | `CRM_DATABASE_URL` fehlt hier |
 
-Diese vier Einstellungen werden nicht automatisch vom alten Server kopiert. Sie bleiben offen, bis sie ausdrücklich für diesen Server gesetzt werden.
+Diese vier Einstellungen werden nicht automatisch vom alten Server kopiert. Analytics, Feedback, Checkliste und IP-Allowlist sind jetzt gesetzt.
 ## Abnahme, noch offen
 
-- Werte von `MCP_URL` und `CSP_URLS` prüfen und bei Bedarf auf die neue Adresse setzen.
-- Neuen `CRM_MCP_SERVER_TOKEN` bestätigen.
-- `CRM_DATABASE_URL` setzen, Zertifikat klären, neu deployen.
-- WorkOS-Subdomain und `OAUTH_RESOURCE` setzen, neu deployen, Anmeldung prüfen.
-- Clients auf https://keen-forge-ldf39.run.mcp-use.com/mcp umstellen.
-- Analytics-Payload, Feedback-Tool, Checklisten-Automatik und IP-Allowlist vom alten Server nur übernehmen, wenn sie hier gewollt sind.
+- `CRM_DATABASE_URL` setzen, Zertifikat klären und danach neu deployen.
+- `CRM_MCP_SERVER_TOKEN` bleibt ungeprüft und gehört nicht ins Repo.
+- `CSP_URLS` konnte nicht geändert werden, weil kein Variablen-Eintrag vorhanden ist.
+- Clients, die noch https://calm-forge-hk9rc.run.mcp-use.com/mcp verwenden, auf https://keen-forge-ldf39.run.mcp-use.com/mcp umstellen.

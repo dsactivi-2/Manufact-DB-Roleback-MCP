@@ -31,11 +31,11 @@ When `OAUTH_ISSUER` is set, the server also requires `OAUTH_AUTHORIZATION_ENDPOI
 
 ## Deploy on Manufact Cloud
 
-Manufact hosts this repository. The running production deployment is `cbbcab9c-581e-448e-9913-1b3c2c348232` on branch `main`, checked on 7 October 2026. Its public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp.
+Manufact hosts this repository. The public MCP address is https://keen-forge-ldf39.run.mcp-use.com/mcp. The active production deployment is `82ea4657-f2b8-484f-b2e3-c731304eb8dc` on branch `main`, checked on 7 October 2026.
 
 The earlier statement that deployment `c0be2dd3` was current on 6 October 2026 referred to the previous server `cloud-crm-mcp` at https://calm-forge-hk9rc.run.mcp-use.com/mcp. That address does not belong to this repository.
 
-WorkOS discovery is not enabled on this deployment. The saved production variable names are `CRM_MCP_SERVER_TOKEN`, `MCP_URL`, and `CSP_URLS`; their values were not copied into this document. `CRM_DATABASE_URL` is still not set, so CRM tools cannot reach a database yet. Cloudflare remains a later option.
+`MCP_URL` and `OAUTH_RESOURCE` are set to https://keen-forge-ldf39.run.mcp-use.com/mcp. `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` is `balanced-lantern-65-staging.authkit.app`. The protected-resource metadata at the new address advertises that resource and AuthKit issuer. `CRM_DATABASE_URL` is still not set, so CRM tools cannot reach a database yet. Cloudflare remains a later option.
 
 Was noch eingesetzt werden muss, steht in [RUNBOOK.md](RUNBOOK.md).
 
