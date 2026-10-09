@@ -98,15 +98,15 @@ server.app.use("/mcp", async (c, next) => {
   server.tool({
   name: "crm_search_kandidaten",
   title: "Kandidaten suchen",
-  description: "Kandidaten mit minimierten Suchfeldern lesen. Geburtsdatum wird nicht ausgegeben; Alter wird nur abgeleitet. Eine Seite hat 50 Zeilen.",
+  description: "Kandidaten nach Name, EU-Status, Alter, Position und Sprachkenntnissen suchen. Geburtsdatum wird nicht ausgegeben; Alter wird nur abgeleitet. Sprachfilter erwartet den im CRM gespeicherten ausgeschriebenen Sprachnamen, keinen Locale-Code. niveau ist ein Mindestniveau. Eine Seite hat 50 Zeilen.",
   inputSchema: z.object({
     name: z.string().optional(),
     eu_buerger: z.boolean().optional(),
     alter_von: z.number().int().optional(),
     alter_bis: z.number().int().optional(),
     position_text: z.string().optional(),
-    sprache: z.string().optional(),
-    niveau: z.string().optional(),
+    sprache: z.string().min(1).describe("Ausgeschriebener Sprachname genau wie im CRM gespeichert, z. B. Deutsch; kein Locale-Code wie de-DE. Exakter Vergleich nach Trim.").optional(),
+    niveau: z.enum(["A1", "A2", "B1", "B2", "C1", "C2", "BEZ ZNANJA"]).describe("Mindestniveau A1-C2; BEZ ZNANJA bedeutet ausdrücklich keine Kenntnisse.").optional(),
     fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
     archived: z.boolean().optional(),
     page_size: z.number().int().min(1).max(50).optional(),
@@ -119,16 +119,16 @@ server.app.use("/mcp", async (c, next) => {
 server.tool({
   name: "crm_search_companies",
   title: "Firmen suchen",
-  description: "Firmen lesen, 50 Zeilen pro Seite.",
-  inputSchema: z.object({ q: z.string().optional(), country: z.string().optional(), status: z.number().int().optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
+  description: "Firmen nach Name, Land oder numerischem CRM-Status suchen. q sucht im Firmennamen, country vergleicht das gespeicherte Land exakt. Der numerische company_status hat in diesem Server noch keine verifizierte fachliche Werteliste; status daher nur verwenden, wenn der konkrete CRM-Statuswert bereits aus dem Nutzerkontext stammt. 50 Zeilen pro Seite.",
+  inputSchema: z.object({ q: z.string().optional(), country: z.string().optional(), status: z.number().int().describe("Exakter numerischer company_status aus dem CRM. Keine Statusnummer raten; nur verwenden, wenn der Wert explizit bekannt ist.").optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/companies", args, () => runCompanySearch(db(), args))));
 
 server.tool({
   name: "crm_search_nalozi",
   title: "Aufträge suchen",
-  description: "Auftraege lesen, ohne SELECT *.",
-  inputSchema: z.object({ q: z.string().optional(), status: z.number().int().optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
+  description: "Aufträge nach Freitext oder numerischem CRM-Status suchen. q sucht in Titel und Beschreibung. Der numerische nalog_status hat in diesem Server noch keine verifizierte fachliche Werteliste; status daher nur verwenden, wenn der konkrete CRM-Statuswert bereits aus dem Nutzerkontext stammt.",
+  inputSchema: z.object({ q: z.string().optional(), status: z.number().int().describe("Exakter numerischer nalog_status aus dem CRM. Keine Statusnummer raten; nur verwenden, wenn der Wert explizit bekannt ist.").optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/orders", args, () => runOrderSearch(db(), args))));
 
@@ -221,46 +221,7 @@ server.resource({
 }));
 
 
-  const changing = { readOnlyHint: false, destructiveHint: true, openWorldHint: false } as const;
-  const previewing = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
-  const target = { entity_type: z.string().min(1).max(64), entity_id: z.string().min(1).max(191), expected_revision: z.string().regex(/^[0-9]+$/), reason: z.string().min(3).max(500) };
-  server.tool({
-    name: "crm_change_preview",
-  title: "Änderung prüfen",
-    description: "Zeigt eine Feldaenderung mit aktueller Revision. Schreibt nicht.",
-    inputSchema: z.object({ ...target, patch: z.record(z.string(), z.string().nullable()), idempotency_key: z.string().min(8).max(128) }).strict(),
-    annotations: previewing,
-  }, async (args, ctx) => ok(await performWrite(ctx, "/v1/changes/preview", args)));
-  server.tool({
-    name: "crm_change_apply",
-  title: "Änderung anwenden",
-    description: "Wendet eine bereits freigegebene Feldaenderung ueber den Worker an und kann bestehende Werte ueberschreiben. Eine vorherige Freigabe ist erforderlich; das Tool kann selbst nichts genehmigen.",
-    inputSchema: z.object({ ...target, patch: z.record(z.string(), z.string().nullable()), idempotency_key: z.string().min(8).max(128), approval_id: z.string().min(1) }).strict(),
-    annotations: changing,
-  }, async (args, ctx) => ok(await performWrite(ctx, "/v1/changes/apply", args)));
-  server.tool({
-    name: "crm_restore_preview",
-  title: "Wiederherstellung prüfen",
-    description: "Zeigt die Wiederherstellung ausgewaehlter Felder aus einem History-Ereignis. Schreibt nicht.",
-    inputSchema: z.object({ ...target, source_event_id: z.string().min(1), fields: z.array(z.string()).min(1).max(20), idempotency_key: z.string().min(8).max(128) }).strict(),
-    annotations: previewing,
-  }, async (args, ctx) => ok(await performWrite(ctx, "/v1/restores/preview", args)));
-  server.tool({
-    name: "crm_restore_apply",
-  title: "Wiederherstellung anwenden",
-    description: "Stellt zuvor freigegebene Felder als neue protokollierte Aenderung wieder her und kann aktuelle Werte ueberschreiben. Eine vorherige Freigabe ist erforderlich.",
-    inputSchema: z.object({ ...target, source_event_id: z.string().min(1), fields: z.array(z.string()).min(1).max(20), idempotency_key: z.string().min(8).max(128), approval_id: z.string().min(1) }).strict(),
-    annotations: changing,
-  }, async (args, ctx) => ok(await performWrite(ctx, "/v1/restores/apply", args)));
-  server.tool({
-    name: "crm_history_list",
-  title: "Änderungshistorie",
-    description: "Listet gespeicherte Feldaenderungen eines Datensatzes.",
-    inputSchema: z.object({ entity_type: z.string().min(1).max(64), entity_id: z.string().min(1).max(191) }).strict(),
-    annotations: readOnly,
-  }, async (args, ctx) => ok(await performWrite(ctx, "/v1/history/list", args)));
-
-  return server;
+  // Write/restore/history tools are intentionally not advertised until entity types, writable fields, revisions and approval contracts are bounded and documented.\n\n  return server;
 }
 
 const server = createCloudCrmServer();
