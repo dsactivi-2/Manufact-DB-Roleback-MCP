@@ -19,5 +19,9 @@
       "id": "086fd3f6d396445eb3db0cb64f5ff9c7"
     }
   ],
-  "observability": { "enabled": true, "logs": { "enabled": false } }
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true },
+    "traces": { "enabled": true }
+  }
 }
