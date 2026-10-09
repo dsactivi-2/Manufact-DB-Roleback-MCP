@@ -221,7 +221,9 @@ server.resource({
 }));
 
 
-  // Write/restore/history tools are intentionally not advertised until entity types, writable fields, revisions and approval contracts are bounded and documented.\n\n  return server;
+  // Write/restore/history tools are intentionally not advertised until entity types, writable fields, revisions and approval contracts are bounded and documented.
+
+  return server;
 }
 
 const server = createCloudCrmServer();
