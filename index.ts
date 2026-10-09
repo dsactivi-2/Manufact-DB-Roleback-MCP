@@ -135,8 +135,8 @@ server.tool({
 server.tool({
   name: "crm_beruf_report",
   title: "Berufsreport",
-  description: "Berufsreport. Sprache nur wenn sie genannt wird.",
-  inputSchema: z.object({ begriffe: z.array(z.string()).min(1), archived: z.boolean().optional(), sprache: z.string().optional(), top_positionen: z.number().int().min(1).max(50).optional() }).strict(),
+  description: "Berufsreport fuer eine oder mehrere vom Nutzer genannte Berufs- oder Positionsbezeichnungen. Verwenden, wenn eine aggregierte Auswertung statt einer Kandidatenliste gewuenscht ist. Liefert die Anzahl unterschiedlicher passender Kandidaten, Treffer je Suchbegriff und die haeufigsten gespeicherten Positionstexte; eine Sprachverteilung wird nur berechnet, wenn sprache angegeben ist. Archivierte Kandidaten bleiben standardmaessig ausgeschlossen.",
+  inputSchema: z.object({ begriffe: z.array(z.string().min(1)).min(1).describe("Vom Nutzer gemeinte Berufs- oder Positionsbegriffe, z. B. Elektriker. Jeder Eintrag bildet eine eigene Treffergruppe."), archived: z.boolean().optional(), sprache: z.string().optional(), top_positionen: z.number().int().min(1).max(50).describe("Maximale Anzahl der haeufigsten passenden Positionstexte im Report; Standard 15, Maximum 50.").optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/professions", args, () => runBerufReport(db(), args))));
 
@@ -151,15 +151,15 @@ server.tool({
 server.tool({
   name: "crm_kandidat_profile",
   title: "Kandidatenprofil",
-  description: "Minimiertes Profil eines Kandidaten.",
-  inputSchema: z.object({ kandidat_id: z.number().int().positive() }).strict(),
+  description: "Detailprofil fuer genau einen bereits identifizierten Kandidaten. Verwenden, wenn der Nutzer Details zu einer konkreten kandidat_id verlangt, nicht fuer Suche oder Listen. Liefert die freigegebenen Profildaten des Kandidaten einschliesslich Basisdaten sowie zugeordneter beruflicher, Sprach- und Ausbildungsinformationen, soweit im CRM vorhanden; nicht benoetigte Kontakt- oder interne Daten werden nicht fuer eine allgemeine Suche geladen.",
+  inputSchema: z.object({ kandidat_id: z.number().int().positive().describe("Positive interne Kandidaten-ID aus einem vorherigen CRM-Suchergebnis oder einer vom Nutzer eindeutig angegebenen Kandidaten-ID.") }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/profile", args, () => runProfile(db(), args.kandidat_id))));
 
 server.tool({
   name: "crm_stats",
   title: "CRM-Statistik",
-  description: "Gesamtzahlen, ohne Seitengrenze.",
+  description: "CRM-weite Uebersichtsstatistik fuer Nutzerfragen nach Gesamtzahlen. Liefert die vollstaendigen Gesamtzahlen von Kandidaten, Firmen und Auftraegen/Assignments im zulaessigen CRM-Scope und ist nicht auf eine 50-Zeilen-Suchseite begrenzt. Nicht verwenden, wenn der Nutzer einzelne Datensaetze, gefilterte Kandidaten oder ein Kandidatenprofil verlangt.",
   inputSchema: z.object({}).strict(),
   annotations: readOnly,
 }, async (_args, ctx) => ok(await performRead(ctx, "/v1/read/stats", {}, () => runStats(db()))));
