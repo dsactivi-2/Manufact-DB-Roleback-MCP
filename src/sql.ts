@@ -109,7 +109,6 @@ export function buildCandidateSearch(args: CandidateArgs = {}): ReadPlan {
   }
   const rowSql = [
     "SELECT k.kandidat_id, k.kandidat_ime, k.kandidat_prezime, k.kandidat_status,",
-    "k.kandidat_datumrodjenja,",
     "TIMESTAMPDIFF(YEAR, k.kandidat_datumrodjenja, CURRENT_DATE) AS alter_jahre",
     "FROM idk_kandidati k " + whereSql(rowClauses),
     "ORDER BY k.kandidat_id DESC",
