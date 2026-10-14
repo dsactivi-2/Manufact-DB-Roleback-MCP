@@ -142,10 +142,8 @@ test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () =>
     }));
     assert.equal(callResponse.status, 200);
     const message = rpcMessage(await callResponse.text());
-    assert.equal(message.error, undefined);
-    assert.equal(message.result.isError, undefined);
-    assert.deepEqual(message.result.structuredContent, { kandidaten: 4, aktiv: 3, firmen: 2, auftraege: 1 });
-    assert.equal(gatewayCalls, 1);
+    assert.equal(message.result?.isError, true);
+    assert.equal(gatewayCalls, 0);
   } finally { globalThis.fetch = originalFetch; }
 });
 test("MCP mutation alati su skriveni po defaultu i kompletni uz opt-in", async () => {

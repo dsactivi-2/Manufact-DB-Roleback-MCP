@@ -4,10 +4,11 @@ import { mutationSchemas } from "./contracts/mutations.js";
 import { assertMcpMutationConfiguration } from "./src/config.js";
 import { createOAuthProvider } from "./src/auth.js";
 import { actorFromOAuth, actorFromSharedToken, type Actor } from "./src/identity.js";
+import { isCrmAdmin, statsVisibleTo } from "./src/permissions.js";
 import { createWorkerClient } from "./src/worker-client.js";
 import { openDatabase } from "./src/db.js";
 import { assertSeparateInfrastructure } from "./src/guard.js";
-import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI, readGuide } from "./src/guides.js";
+import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI } from "./src/guides.js";
 import { publicEntityPolicies } from "./src/registry.js";
 import {
   runBerufReport,
@@ -39,16 +40,22 @@ function actorFor(ctx?: AuthCtx): Actor {
   return actorFromSharedToken();
 }
 
+function assertAdmin(ctx: AuthCtx | undefined): void {
+  if (!isCrmAdmin(actorFor(ctx))) throw new Error("Lesen ist fuer diese Rolle nicht erlaubt.");
+}
+
 function cloudflareTransport(): boolean {
   return (databaseEnv.CRM_TRANSPORT ?? "").trim() === "cloudflare";
 }
 
 async function performRead(ctx: AuthCtx | undefined, path: string, args: unknown, direct: () => Promise<unknown>) {
+  assertAdmin(ctx);
   if (!cloudflareTransport()) return direct();
   return createWorkerClient(databaseEnv).post(path, args, actorFor(ctx));
 }
 
 async function performWrite(ctx: AuthCtx | undefined, path: string, args: unknown) {
+  assertAdmin(ctx);
   return createWorkerClient(databaseEnv).post(path, args, actorFor(ctx));
 }
 
@@ -164,10 +171,10 @@ server.tool({
 server.tool({
   name: "crm_stats",
   title: "CRM-Statistik",
-  description: "CRM-weite Uebersichtsstatistik fuer Nutzerfragen nach Gesamtzahlen. Liefert die vollstaendigen Gesamtzahlen von Kandidaten, Firmen und Auftraegen/Assignments im zulaessigen CRM-Scope und ist nicht auf eine 50-Zeilen-Suchseite begrenzt. Nicht verwenden, wenn der Nutzer einzelne Datensaetze, gefilterte Kandidaten oder ein Kandidatenprofil verlangt.",
+  description: "CRM-weite Uebersichtsstatistik fuer Nutzerfragen nach Gesamtzahlen. Liefert Kandidatenzahlen fuer jede Lesrolle. Firmen- und Auftragszahlen nur fuer eine Admin-Rolle. Nicht auf eine 50-Zeilen-Suchseite begrenzt. Nicht verwenden, wenn der Nutzer einzelne Datensaetze, gefilterte Kandidaten oder ein Kandidatenprofil verlangt.",
   inputSchema: z.object({}).strict(),
   annotations: readOnly,
-}, async (_args, ctx) => ok(await performRead(ctx, "/v1/read/stats", {}, () => runStats(db()))));
+}, async (_args, ctx) => ok(statsVisibleTo(actorFor(ctx), await performRead(ctx, "/v1/read/stats", {}, () => runStats(db())) as Record<string, unknown>)));
 
 server.tool({
   name: "crm_list_tables",
@@ -192,7 +199,7 @@ server.tool({
   description: "Zeigt alle fachlichen CRM-Entitaeten mit READ, WRITE oder APPROVE_WRITE, erlaubten Operationen und freigegebenen Feldern.",
   inputSchema: z.object({}).strict(),
   annotations: readOnly,
-}, async () => ok({ default_write_access: "approve_write", entities: publicEntityPolicies() }));
+}, async (_args, ctx) => { assertAdmin(ctx); return ok({ default_write_access: "approve_write", entities: publicEntityPolicies() }); });
 
 server.tool({
   name: "crm_search_guide",
@@ -200,7 +207,7 @@ server.tool({
   description: "Regeln fuer die lesenden Werkzeuge, ohne Geheimnisse.",
   inputSchema: z.object({}).strict(),
   annotations: readOnly,
-}, async () => ok({
+}, async (_args, ctx) => { assertAdmin(ctx); return ok({
   seite: 50,
   zaehlung: "vollstaendig",
   geburtsdatum: false,
@@ -211,7 +218,7 @@ server.tool({
     markdown: GUIDE_MARKDOWN_URI,
   },
   skill: "skill://crm-kandidatensuche/SKILL.md",
-}));
+}); });
 
 server.resource({
   name: "crm_search_guide_json",
@@ -220,7 +227,7 @@ server.resource({
   description: "Strukturierte Regeln fuer Cloud CRM MCP, Version 1.2.0.",
   mimeType: "application/json",
 }, (uri) => ({
-  contents: [{ uri: uri.href, mimeType: "application/json", text: readGuide("json") }],
+  contents: [{ uri: uri.href, mimeType: "application/json", text: "{\"error\":\"ADMIN_REQUIRED\"}" }],
 }));
 
 server.resource({
@@ -230,7 +237,7 @@ server.resource({
   description: "Lesbarer Leitfaden fuer Cloud CRM MCP, Version 1.2.0.",
   mimeType: "text/markdown",
 }, (uri) => ({
-  contents: [{ uri: uri.href, mimeType: "text/markdown", text: readGuide("markdown") }],
+  contents: [{ uri: uri.href, mimeType: "text/markdown", text: "Admin role required." }],
 }));
 
 

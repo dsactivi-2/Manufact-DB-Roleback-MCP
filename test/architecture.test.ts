@@ -152,26 +152,38 @@ test("poslovni entiteti pocinju sa approve-write, a nesigurne tabele ostaju read
 test("WorkOS role iz JWT-a daju samo predvidjene dozvole po entitetu", () => {
   assert.deepEqual(rolesFromPayload({ roles: ["crm-reader-entities", "crm-writer-approval"], role: "crm-approver" }), ["crm-reader-entities", "crm-writer-approval", "crm-approver"]);
   const reader = { issuer: "manufact-db-rollback-mcp", subject: "reader-1", scopes: permissionsFromRoles(["crm-reader-entities"]) };
-  assert.equal(canReadEntity(reader, "candidate"), true);
+  assert.equal(canReadEntity(reader, "candidate"), false);
   assert.equal(canRequestWrite(reader, "candidate"), false);
 
   const requester = { issuer: "manufact-db-rollback-mcp", subject: "writer-1", scopes: permissionsFromRoles(["crm-writer-approval"]) };
-  assert.equal(canRequestWrite(requester, "candidate"), true);
-  assert.equal(canRequestWrite(requester, "candidate_language"), true);
+  assert.equal(canRequestWrite(requester, "candidate"), false);
+  assert.equal(canRequestWrite(requester, "candidate_language"), false);
   assert.equal(canRequestWrite(requester, "candidate_status"), false);
   assert.equal(canAutomaticWrite(requester, "candidate"), false);
 
   const automatic = { issuer: "manufact-db-rollback-mcp", subject: "writer-2", scopes: permissionsFromRoles(["crm-writer-auto"]) };
-  assert.equal(canRequestWrite(automatic, "company"), true);
-  assert.equal(canAutomaticWrite(automatic, "company"), true);
+  assert.equal(canRequestWrite(automatic, "company"), false);
+  assert.equal(canAutomaticWrite(automatic, "company"), false);
   assert.equal(entityRequiresApproval("approve_write", automatic, "company"), true);
-  assert.equal(entityRequiresApproval("write", automatic, "company"), false);
+  assert.equal(entityRequiresApproval("write", automatic, "company"), true);
   assert.equal(entityRequiresApproval("write", requester, "company"), true);
 
   const approver = { issuer: "manufact-db-rollback-mcp", subject: "approver-1", scopes: permissionsFromRoles(["crm-approver"]) };
-  assert.equal(canApproveWrite(approver, "order"), true);
+  assert.equal(canApproveWrite(approver, "order"), false);
   assert.equal(canRequestWrite(approver, "order"), false);
-  assert.equal(canReadEntity(approver, "order"), true);
+  assert.equal(canReadEntity(approver, "order"), false);
+  assert.equal(canReadEntity(reader, "company"), false);
+  assert.equal(canReadEntity(requester, "company"), false);
+  const admin = { issuer: "manufact-db-rollback-mcp", subject: "admin-1", scopes: permissionsFromRoles(["admin"]) };
+  assert.equal(canReadEntity(admin, "company"), true);
+  assert.equal(canReadEntity(admin, "order"), true);
+  assert.equal(canReadEntity(admin, "candidate"), true);
+  assert.equal(canRequestWrite(admin, "candidate"), false);
+  const crmAdmin = { issuer: "manufact-db-rollback-mcp", subject: "admin-2", scopes: permissionsFromRoles(["crm-admin"]) };
+  assert.equal(canReadEntity(crmAdmin, "order"), true);
+  const adminWriter = { issuer: "manufact-db-rollback-mcp", subject: "admin-writer", scopes: permissionsFromRoles(["admin", "crm-writer-approval"]) };
+  assert.equal(canRequestWrite(adminWriter, "candidate"), true);
+  assert.equal(canAutomaticWrite(adminWriter, "candidate"), false);
 });
 
 test("minimalna DB prava ne daju DELETE, DROP ni INSERT u postojece CRM zapise", () => {
@@ -195,9 +207,13 @@ test("minimalna DB prava ne daju DELETE, DROP ni INSERT u postojece CRM zapise",
   assert.deepEqual(privileges.find((item) => item.table === "idk_kandidat_status")?.insertColumns, []);
 
   const jwtActor = actorFromOAuth({ payload: { sub: "workos-user", roles: ["crm-writer-approval"] } });
-  assert.equal(canRequestWrite(jwtActor, "candidate"), true);
-  assert.equal(canRequestWrite(jwtActor, "candidate_language"), true);
+  assert.equal(canRequestWrite(jwtActor, "candidate"), false);
+  assert.equal(canRequestWrite(jwtActor, "candidate_language"), false);
   assert.equal(canRequestWrite(jwtActor, "candidate_status"), false);
+  const adminActor = actorFromOAuth({ payload: { sub: "workos-admin", roles: ["admin"] } });
+  assert.equal(canReadEntity(adminActor, "candidate"), true);
+  assert.equal(canReadEntity(adminActor, "company"), true);
+  assert.equal(canRequestWrite(adminActor, "candidate"), false);
 });
 
 test("interni approval inbox veze odluku za neizmijenjeni preview", async () => {

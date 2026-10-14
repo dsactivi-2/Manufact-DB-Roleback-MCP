@@ -7,7 +7,7 @@ import { applyChange, decideApproval, insertApproval, listHistory, listPendingAp
 import { actorFromSharedToken, sameSecret, verifyAssertion, WORKER_AUDIENCE, type Actor } from "../identity.js";
 import { assertIsolatedTarget, assertSafeDatabaseTarget } from "../isolation.js";
 import { archiveDue, assertNoPhysicalDelete, type ArchivePut } from "../outbox.js";
-import { canApproveWrite, canReadAll, canReadEntity, canReadMetadata, canRequestWrite, canWriteAny } from "../permissions.js";
+import { canApproveWrite, canReadAll, canReadEntity, canReadMetadata, canRequestWrite, canWriteAny, isAdminOnlyEntity, statsVisibleTo } from "../permissions.js";
 import { runBerufReport, runCandidateSearch, runCompanySearch, runCrmQuery, runDescribeTable, runListTables, runOrderSearch, runProfile, runResolveBeruf, runStats, type Db } from "../read.js";
 import type { SqlSession } from "../sql-session.js";
 import { openHyperdrive, type HyperdriveBinding } from "./hyperdrive.js";
@@ -77,7 +77,7 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   if (path === "/v1/read/companies") { requireRead(actor, ["company"]); return runCompanySearch(db, readSchemas.companies.parse(body)); }
   if (path === "/v1/read/orders") { requireRead(actor, ["order"]); return runOrderSearch(db, readSchemas.orders.parse(body)); }
   if (path === "/v1/read/profile") { requireRead(actor, ["candidate", "candidate_education", "candidate_language", "candidate_experience"]); return runProfile(db, readSchemas.profile.parse(body).kandidat_id); }
-  if (path === "/v1/read/stats") { requireMetadataRead(actor); readSchemas.stats.parse(body); return runStats(db); }
+  if (path === "/v1/read/stats") { requireMetadataRead(actor); readSchemas.stats.parse(body); return statsVisibleTo(actor, await runStats(db) as Record<string, unknown>); }
   if (path === "/v1/read/tables") { requireMetadataRead(actor); return runListTables(db, readSchemas.tables.parse(body).search); }
   if (path === "/v1/read/describe") { requireMetadataRead(actor); return runDescribeTable(db, readSchemas.describe.parse(body).table); }
   if (path === "/v1/read/query") throw new CrmError("SQL_GATEWAY_DISABLED", "Slobodni SQL je zatvoren.", 403);
@@ -85,6 +85,7 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   if (path === "/v1/read/resolve_profession" || path === "/v1/read/beruf-resolve") { requireRead(actor, ["candidate_experience"]); return runResolveBeruf(db, readSchemas.resolve_profession.parse(body)); }
   if (path === "/v1/history/list") {
     const entityType = String(body.entity_type ?? "");
+    requireAdminOnlyRead(actor, entityType);
     if (!canReadEntity(actor, entityType) && !canRequestWrite(actor, entityType) && !canApproveWrite(actor, entityType)) throw forbidden("Historie");
     return listHistory(session, entityType, String(body.entity_id ?? ""));
   }
@@ -94,6 +95,7 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   const options = { allowTestEntities: env.ALLOW_TEST_ENTITIES === "true", requireApproval: env.REQUIRE_APPROVAL !== "false", now: deps.now, failBefore };
   if (path === "/v1/changes/preview") {
     const entityType = String(body.entity_type ?? "");
+    requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Aenderungsvorschau");
     const input = changeInput(body, "change");
     return previewChange(session, input, options);
@@ -101,12 +103,14 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   if (path === "/v1/changes/apply") {
     if (env.WRITES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Schreiben ist aus.", 403);
     const entityType = String(body.entity_type ?? "");
+    requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Schreiben");
     const input = changeInput(body, "change");
     return applyChange(session, input, actor, options);
   }
   if (path === "/v1/restores/preview") {
     const entityType = String(body.entity_type ?? "");
+    requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Wiederherstellungsvorschau");
     const patch = await restorePatchFromEvent(session, entityType, String(body.entity_id ?? ""), String(body.source_event_id ?? ""), stringList(body.fields));
     return previewChange(session, changeInput({ ...body, patch }, "restore"), options);
@@ -114,6 +118,7 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   if (path === "/v1/restores/apply") {
     if (env.RESTORES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Wiederherstellen ist aus.", 403);
     const entityType = String(body.entity_type ?? "");
+    requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Wiederherstellen");
     const patch = await restorePatchFromEvent(session, entityType, String(body.entity_id ?? ""), String(body.source_event_id ?? ""), stringList(body.fields));
     return applyChange(session, changeInput({ ...body, patch }, "restore"), actor, options);
@@ -130,17 +135,20 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
     const rows = await session.query("SELECT preview_json FROM rb_approvals WHERE approval_id=?", [approvalId]);
     const preview = approvalPreview(rows.rows[0]?.preview_json);
     if (!canApproveWrite(actor, preview.entity_type)) throw forbidden("Freigabe");
+    requireAdminOnlyRead(actor, preview.entity_type);
     return decideApproval(session, approvalId, decision, actor, deps.now);
   }
   if (path === "/v1/approvals/request") {
     if (env.WRITES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Schreiben ist aus.", 403);
     const preview = approvalPreview(body.preview);
     if (!canRequestWrite(actor, preview.entity_type)) throw forbidden("Freigabeanfrage");
+    requireAdminOnlyRead(actor, preview.entity_type);
     const approvalId = await requestApproval(session, actor, preview, deps.now);
     return { approval_id: approvalId, status: "pending", preview_sha256: preview.preview_sha256 };
   }
   if (path === "/v1/approvals/list") {
     const entityType = String(body.entity_type ?? "");
+    requireAdminOnlyRead(actor, entityType);
     if (!canApproveWrite(actor, entityType)) throw forbidden("Freigabeliste");
     return listPendingApprovals(session, entityType);
   }
@@ -149,6 +157,10 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
 
 function requireRead(actor: Actor, entityTypes: readonly string[]): void {
   if (!canReadAll(actor, entityTypes)) throw forbidden("Lesen");
+}
+
+function requireAdminOnlyRead(actor: Actor, entityType: string): void {
+  if (isAdminOnlyEntity(entityType) && !canReadEntity(actor, entityType)) throw forbidden("Lesen");
 }
 
 function requireMetadataRead(actor: Actor): void {
