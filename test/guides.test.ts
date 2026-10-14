@@ -25,13 +25,13 @@ test("embedded guide uses the new server page rules", () => {
     privacy: { allowed_exceptions: { eu_buerger_filter: boolean; birthdate_in_candidate_search_rows: boolean } };
   };
   const markdown = readGuide("markdown");
-  assert.equal(guide.version, "1.2.0");
+  assert.equal(guide.version, "1.4.0");
   assert.equal(guide.server, "cloud-crm-mcp");
   assert.equal(guide.limits.list_page_size, 50);
   assert.equal(guide.limits.count_is_complete, true);
   assert.equal(guide.limits.no_default_limit_200, true);
   assert.equal(guide.privacy.allowed_exceptions.eu_buerger_filter, true);
-  assert.equal(guide.privacy.allowed_exceptions.birthdate_in_candidate_search_rows, true);
+  assert.equal(guide.privacy.allowed_exceptions.birthdate_in_candidate_search_rows, false);
   assert.match(markdown, /50 Zeilen pro Seite/);
   assert.doesNotMatch(markdown, /Cap von 200/);
 });

@@ -1,12 +1,12 @@
 interface:
   display_name: "CRM-Kandidatensuche"
-  short_description: "Kandidaten gezielt suchen und sicher filtern"
-  default_prompt: "Mujo udri — nutze $crm-kandidatensuche, um Kandidaten mit den genannten CRM-Filtern read-only zu suchen."
+  short_description: "CRM lesen und freigegebene Änderungen führen"
+  default_prompt: "Mujo udri — nutze $crm-kandidatensuche für die genannte read-only CRM-Suche."
 dependencies:
   tools:
     - type: "mcp"
       value: "cloud-crm-mcp"
-      description: "This read-only Cloud CRM MCP server at https://keen-forge-ldf39.run.mcp-use.com/mcp. Do not call the old Worker or https://calm-forge-hk9rc.run.mcp-use.com/mcp."
+      description: "Connected CRM MCP. Read tools are the default. History and change tools exist only when the server registers them. Do not call the old Worker."
       transport: "streamable_http"
 policy:
   allow_implicit_invocation: true

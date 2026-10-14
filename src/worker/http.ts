@@ -58,6 +58,7 @@ export async function handleWorker(request: Request, env: WorkerEnv, deps: Worke
     const result = await withSession(env, deps, async (session) => route(url.pathname, body, actor, env, session, deps));
     return json(200, readRoute ? { ok: true, result, data: result } : { ok: true, result });
   } catch (error) {
+    logSafeFailure(error);
     const crm = error instanceof CrmError ? error : error instanceof SyntaxError || error instanceof ZodError ? new CrmError("INVALID_INPUT", "Ulaz nije ispravan.") : asCrmError(error);
     return json(crm.status, { ok: false, error: { code: crm.code, message: crm.message } });
   }
@@ -239,6 +240,14 @@ function missingArchive(): ArchivePut {
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+function logSafeFailure(error: unknown): void {
+  if (error instanceof CrmError || error instanceof SyntaxError || error instanceof ZodError) return;
+  const record = error && typeof error === "object" ? error as { code?: unknown; sqlState?: unknown } : {};
+  const code = typeof record.code === "string" && /^[A-Z0-9_]{1,64}$/.test(record.code) ? record.code : "";
+  const sqlState = typeof record.sqlState === "string" && /^[0-9A-Z]{1,8}$/.test(record.sqlState) ? record.sqlState : "";
+  console.error(JSON.stringify({ event: "query_failed", code, sqlState }));
 }
 
 export { insertApproval };

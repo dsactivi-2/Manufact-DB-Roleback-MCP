@@ -8,7 +8,7 @@ import { isCrmAdmin, statsVisibleTo } from "./src/permissions.js";
 import { createWorkerClient } from "./src/worker-client.js";
 import { openDatabase } from "./src/db.js";
 import { assertSeparateInfrastructure } from "./src/guard.js";
-import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI } from "./src/guides.js";
+import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI, readGuide } from "./src/guides.js";
 import { publicEntityPolicies } from "./src/registry.js";
 import {
   runBerufReport,
@@ -82,7 +82,7 @@ export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
     name: "cloud-crm-mcp",
     title: "Cloud CRM MCP",
     version: "0.1.0",
-    description: "Read-only CRM MCP server on separate infrastructure.",
+    description: "CRM MCP server for search and approved changes on separate infrastructure.",
     skills: true,
   } as const;
   const server = oauth ? new MCPServer({ ...config, oauth }) : new MCPServer(config);
@@ -110,15 +110,15 @@ server.app.use("/mcp", async (c, next) => {
   server.tool({
   name: "crm_search_kandidaten",
   title: "Kandidaten suchen",
-  description: "Kandidaten gezielt nach Name, EU-Status, Alter, Position und Sprachkenntnissen suchen. name sucht als Teilstring getrennt in Vor- oder Nachname; position_text sucht als Teilstring in gespeicherten Positionen der Berufserfahrung. alter_von und alter_bis sind inklusive Grenzen von 0 bis 150 Jahren. eu_buerger=true verlangt einen gespeicherten Staatsbuergerschaftstyp, der mit EU beginnt; false findet Nicht-EU sowie leere oder fehlende Werte. archived ist standardmaessig false: Status 3 wird ausgeschlossen; nur archived=true schliesst archivierte Kandidaten in die Suche ein. Geburtsdatum wird nicht ausgegeben, Alter nur abgeleitet. Sprachfilter erwartet den ausgeschriebenen im CRM gespeicherten Sprachnamen, keinen Locale-Code; niveau ist ein Mindestniveau. Eine Seite hat hoechstens 50 Zeilen.",
+  description: "Kandidaten nur mit den Filtern suchen, die der Nutzer genannt hat. Ein Vor- und Nachname allein ist eine reine Namenssuche: Beruf, Sprache, Alter und EU-Status nicht hinzufuegen. name nimmt Vorname, Nachname oder beides; jedes Wort muss in Vorname oder Nachname vorkommen, Grossschreibung und Diakritika sind egal. position_text sucht in der Berufserfahrung und versteht dieselbe Taetigkeit unter einem gebraeuchlichen Namen, zum Beispiel vozac/Fahrer/driver, elektricar/Elektriker, konobar/Kellner. Keine verwandten Berufe ergaenzen. alter_von und alter_bis sind inklusive vollendete Jahre von 0 bis 150; ohne Geburtsdatum kein Treffer. sprache akzeptiert den gespeicherten oder gesprochenen Namen, zum Beispiel Njemački, njemacki, Deutsch oder German, ebenso Engleski/English. niveau ist ein Mindestniveau. Mehrere gesetzte Filter gelten zusammen. Archivstatus 3 bleibt ausgeschlossen, bis archived=true. Hoechstens 50 Zeilen. Geburtsdatum wird nicht ausgegeben.",
   inputSchema: z.object({
-    name: z.string().min(1).describe("Teilstring-Suche in Vorname ODER Nachname; entspricht SQL LIKE %wert%.").optional(),
+    name: z.string().min(1).describe("Nur setzen, wenn der Nutzer einen Namen nennt. Vorname, Nachname oder beides. Jedes Wort muss in Vorname oder Nachname vorkommen.").optional(),
     eu_buerger: z.boolean().describe("true: Staatsbuergerschaftstyp beginnt mit EU. false: Typ beginnt nicht mit EU oder ist NULL/leer. Ohne Wert kein EU-Filter.").optional(),
     alter_von: z.number().int().min(0).max(150).describe("Inklusive untere Altersgrenze in vollendeten Jahren, 0 bis 150.").optional(),
     alter_bis: z.number().int().min(0).max(150).describe("Inklusive obere Altersgrenze in vollendeten Jahren, 0 bis 150; muss groesser oder gleich alter_von sein.").optional(),
-    position_text: z.string().min(1).describe("Teilstring-Suche in gespeicherten Positionstexten der Berufserfahrung; entspricht SQL LIKE %wert%.").optional(),
-    sprache: z.string().min(1).describe("Ausgeschriebener Sprachname genau wie im CRM gespeichert, z. B. Deutsch; kein Locale-Code wie de-DE. Exakter Vergleich nach Trim.").optional(),
-    niveau: z.enum(["A1", "A2", "B1", "B2", "C1", "C2", "BEZ ZNANJA"]).describe("Mindestniveau A1-C2; BEZ ZNANJA bedeutet ausdrücklich keine Kenntnisse.").optional(),
+    position_text: z.string().min(1).describe("Nur setzen, wenn der Nutzer einen Beruf nennt. Gespeicherte Position, auch ohne Diakritika oder unter dem gebraeuchlichen Namen derselben Taetigkeit.").optional(),
+    sprache: z.string().min(1).describe("Nur setzen, wenn der Nutzer eine Sprache nennt. Njemački, njemacki, Deutsch, German, Engleski oder English und die anderen gespeicherten Sprachen.").optional(),
+    niveau: z.enum(["A1", "A2", "B1", "B2", "C1", "C2", "BEZ ZNANJA"]).describe("Mindestniveau A1-C2. BEZ ZNANJA trifft auch Bez znanja, Bezznanja und Bez poznavanja, nicht leere Werte.").optional(),
     fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
     archived: z.boolean().describe("Standard false/ausgelassen: Kandidaten mit Status 3 werden ausgeschlossen. true: archivierte Kandidaten werden nicht aufgrund von Status 3 ausgeschlossen.").optional(),
     page_size: z.number().int().min(1).max(50).optional(),
@@ -224,20 +224,20 @@ server.resource({
   name: "crm_search_guide_json",
   uri: GUIDE_JSON_URI,
   title: "CRM-Suchregeln",
-  description: "Strukturierte Regeln fuer Cloud CRM MCP, Version 1.2.0.",
+  description: "Strukturierte Regeln fuer Cloud CRM MCP, Version 1.4.0.",
   mimeType: "application/json",
 }, (uri) => ({
-  contents: [{ uri: uri.href, mimeType: "application/json", text: "{\"error\":\"ADMIN_REQUIRED\"}" }],
+  contents: [{ uri: uri.href, mimeType: "application/json", text: readGuide("json") }],
 }));
 
 server.resource({
   name: "crm_search_guide_markdown",
   uri: GUIDE_MARKDOWN_URI,
   title: "CRM-Suchleitfaden",
-  description: "Lesbarer Leitfaden fuer Cloud CRM MCP, Version 1.2.0.",
+  description: "Lesbarer Leitfaden fuer Cloud CRM MCP, Version 1.4.0.",
   mimeType: "text/markdown",
 }, (uri) => ({
-  contents: [{ uri: uri.href, mimeType: "text/markdown", text: "Admin role required." }],
+  contents: [{ uri: uri.href, mimeType: "text/markdown", text: readGuide("markdown") }],
 }));
 
 

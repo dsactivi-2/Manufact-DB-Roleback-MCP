@@ -18,7 +18,7 @@ import test from "node:test";
 const { sha256 } = await import("../src/canonical.ts");
 const { assertMcpMutationConfiguration, workerConfigurationErrors } = await import("../src/config.ts");
 const { assertSeparateInfrastructure } = await import("../src/guard.ts");
-const { actorFromOAuth, actorFromSharedToken, canWrite, exportPem, signAssertion, verifyAssertion, WORKER_AUDIENCE } = await import("../src/identity.ts");
+const { actorFromOAuth, actorFromSharedToken, canWrite, exportPem, principalHash, signAssertion, verifyAssertion, WORKER_AUDIENCE } = await import("../src/identity.ts");
 const { decideApproval, insertApproval, requestApproval } = await import("../src/history.ts");
 const { assertWritableEntity, entityByType, publicEntityPolicies } = await import("../src/registry.ts");
 const { handleWorker } = await import("../src/worker/http.ts");
@@ -184,6 +184,11 @@ test("WorkOS role iz JWT-a daju samo predvidjene dozvole po entitetu", () => {
   const adminWriter = { issuer: "manufact-db-rollback-mcp", subject: "admin-writer", scopes: permissionsFromRoles(["admin", "crm-writer-approval"]) };
   assert.equal(canRequestWrite(adminWriter, "candidate"), true);
   assert.equal(canAutomaticWrite(adminWriter, "candidate"), false);
+  assert.equal(canApproveWrite(adminWriter, "candidate"), false);
+  const adminApprover = { issuer: "manufact-db-rollback-mcp", subject: "admin-approver", scopes: permissionsFromRoles(["admin", "crm-approver"]) };
+  assert.equal(canApproveWrite(adminApprover, "candidate"), true);
+  assert.equal(canRequestWrite(adminApprover, "candidate"), false);
+  assert.equal(canReadEntity(adminApprover, "company"), true);
 });
 
 test("minimalna DB prava ne daju DELETE, DROP ni INSERT u postojece CRM zapise", () => {
@@ -234,7 +239,7 @@ test("interni approval inbox veze odluku za neizmijenjeni preview", async () => 
   let committed = false;
   const decideSession = { async query(sql: string) {
     if (sql === "START TRANSACTION") return { rows: [], affectedRows: 0 };
-    if (sql.includes("SELECT preview_sha256")) return { rows: [{ preview_sha256: preview.preview_sha256, preview_json: JSON.stringify(preview), decision: "pending", expires_at: "2026-10-14 11:00:00.000000" }], affectedRows: 1 };
+    if (sql.includes("principal_hash, preview_sha256, preview_json")) return { rows: [{ principal_hash: principalHash(writer), preview_sha256: preview.preview_sha256, preview_json: JSON.stringify(preview), decision: "pending", expires_at: "2026-10-14 11:00:00.000000" }], affectedRows: 1 };
     if (sql.startsWith("UPDATE rb_approvals")) return { rows: [], affectedRows: 1 };
     if (sql === "COMMIT") { committed = true; return { rows: [], affectedRows: 0 }; }
     if (sql === "ROLLBACK") return { rows: [], affectedRows: 0 };
@@ -244,5 +249,6 @@ test("interni approval inbox veze odluku za neizmijenjeni preview", async () => 
   assert.equal(result.decision, "approved");
   assert.equal(result.expires_at, "2026-10-13T12:15:00.000Z");
   assert.equal(committed, true);
+  await assert.rejects(() => decideApproval(decideSession, approvalId, "approved", writer, new Date("2026-10-13T12:00:00.000Z")), /eigene Freigabe/);
   await assert.rejects(() => requestApproval(requestSession, writer, { ...preview, reason: "Izmijenjeno" }, new Date()), /veraendert/);
 });

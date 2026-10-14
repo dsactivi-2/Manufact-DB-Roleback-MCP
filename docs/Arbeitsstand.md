@@ -1,3 +1,5 @@
+Aktuelno, 14. oktobar 2026: produkcijski wrangler.jsonc ima WRITES_ENABLED=true, RESTORES_ENABLED=true i REQUIRE_APPROVAL=true. Staging ostaje iskljucen. Tekst ispod je snimak ranijeg dana.
+
 # Radno stanje — Cloudflare historija i rollback
 
 Datum: 7. oktobar 2026.

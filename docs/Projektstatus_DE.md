@@ -1,3 +1,5 @@
+Aktuelno, 14. oktobar 2026: produkcijski wrangler.jsonc ima WRITES_ENABLED=true, RESTORES_ENABLED=true i REQUIRE_APPROVAL=true. Staging ostaje iskljucen. Tekst ispod je snimak ranijeg dana.
+
 # Projektstatus: Manufact DB Rollback MCP
 
 Stand: 07.10.2026

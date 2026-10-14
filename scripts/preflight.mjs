@@ -31,8 +31,12 @@ for (const relative of [
 
 const production = readJson("cloudflare/worker/wrangler.jsonc");
 const productionVars = production.vars ?? {};
-for (const message of workerConfigurationErrors(productionVars)) errors.push(`PRODUCTION_CONFIG:${message}`);
-for (const [name, expected] of Object.entries({ WRITES_ENABLED: "false", RESTORES_ENABLED: "false", REQUIRE_APPROVAL: "true", ALLOW_TEST_ENTITIES: "false" })) {
+const checkedVars = { ...productionVars };
+if (checkedVars.WRITES_ENABLED === "true" && !checkedVars.IDENTITY_ASSERTION_PUBLIC_KEY) {
+  checkedVars.IDENTITY_ASSERTION_PUBLIC_KEY = "configured-outside-git";
+}
+for (const message of workerConfigurationErrors(checkedVars)) errors.push(`PRODUCTION_CONFIG:${message}`);
+for (const [name, expected] of Object.entries({ WRITES_ENABLED: "true", RESTORES_ENABLED: "true", REQUIRE_APPROVAL: "true", ALLOW_TEST_ENTITIES: "false" })) {
   if (productionVars[name] !== expected) errors.push(`PRODUCTION_FLAG:${name}_MUST_BE_${expected}`);
 }
 

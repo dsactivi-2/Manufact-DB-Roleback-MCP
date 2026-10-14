@@ -7,8 +7,8 @@
   "workers_dev": true,
   "vars": {
     "ENVIRONMENT": "production",
-    "WRITES_ENABLED": "false",
-    "RESTORES_ENABLED": "false",
+    "WRITES_ENABLED": "true",
+    "RESTORES_ENABLED": "true",
     "REQUIRE_APPROVAL": "true",
     "ALLOW_TEST_ENTITIES": "false",
     "HISTORY_RETENTION_DAYS": "365"

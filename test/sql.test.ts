@@ -3,12 +3,46 @@ import test from "node:test";
 import { assertSeparateInfrastructure } from "../src/guard.ts";
 import { buildCandidateSearch, buildCompanySearch, buildCrmQuery, buildResolveBeruf } from "../src/sql.ts";
 
-test("Kandidatensuche liefert Geburtsdatum und zaehlt leere Staatsangehoerigkeit mit", () => {
+test("Kandidatensuche leitet das Alter ab und zaehlt leere Staatsangehoerigkeit mit", () => {
   const plan = buildCandidateSearch({ eu_buerger: false, sprache: "Deutsch", niveau: "B1" });
-  assert.match(plan.rowSql, /kandidat_datumrodjenja/);
+  assert.match(plan.rowSql, /TIMESTAMPDIFF\(YEAR, k\.kandidat_datumrodjenja, CURRENT_DATE\) AS alter_jahre/);
+  assert.equal(plan.rowSql.includes("k.kandidat_datumrodjenja AS"), false);
   assert.match(plan.countSql, /TRIM\(k\.kandidat_drzavljanstvo_vrsta\) = ''/);
-  assert.match(plan.countSql, /kj_slusanje IN/);
-  assert.deepEqual(plan.countParams.slice(1, 5), ["Deutsch", "B1", "B2", "C1"]);
+  assert.equal(plan.countSql.includes("UPPER(TRIM(j.kj_slusanje)) IN"), true);
+  assert.deepEqual(plan.countParams, ["EU%", "Njemački", "B1", "B2", "C1", "C2"]);
+});
+
+test("Vor- und Nachname muessen beide Felder treffen", () => {
+  const full = buildCandidateSearch({ name: "Elvis Hurtić" });
+  assert.equal((full.countSql.match(/k.kandidat_ime /g) ?? []).length, 2);
+  assert.equal((full.countSql.match(/k.kandidat_prezime /g) ?? []).length, 2);
+  assert.match(full.countSql, /AND/);
+  assert.deepEqual(full.countParams, ["%elvis%", "%elvis%", "%hurtic%", "%hurtic%"]);
+  const first = buildCandidateSearch({ name: "  Elvis  " });
+  assert.equal((first.countSql.match(/LIKE ?/g) ?? []).length, 2);
+  assert.deepEqual(first.countParams, ["%elvis%", "%elvis%"]);
+});
+
+test("gesprochene Sprache, Beruf und Alter bleiben zusammen und treffen gespeicherte Formen", () => {
+  const spoken = buildCandidateSearch({ sprache: "German", niveau: "BEZ ZNANJA", position_text: "Elektriker", alter_von: 25, alter_bis: 35 });
+  assert.ok(spoken.countParams.includes("Njemački"));
+  assert.ok(spoken.countParams.includes("Bez znanja"));
+  assert.ok(spoken.countParams.includes("Bezznanja"));
+  assert.ok(spoken.countParams.includes("Bez poznavanja"));
+  assert.ok(spoken.countParams.includes("%elektricar%"));
+  assert.ok(spoken.countParams.includes("%elektriker%"));
+  assert.ok(spoken.countParams.includes(25));
+  assert.ok(spoken.countParams.includes(35));
+  assert.match(spoken.countSql, /kandidat_datumrodjenja IS NOT NULL/);
+  assert.equal(spoken.countSql.includes("BETWEEN ? AND ?"), true);
+  assert.equal(spoken.countParams.includes("%vozac%"), false);
+  const driver = buildCandidateSearch({ position_text: "Fahrer" });
+  assert.ok(driver.countParams.includes("%vozac%"));
+  assert.ok(driver.countParams.includes("%fahrer%"));
+  const both = buildCandidateSearch({ sprache: "njemacki i engleski", niveau: "A2" });
+  assert.equal(both.countSql.match(/EXISTS/g)?.length, 2);
+  assert.ok(both.countParams.includes("Njemački"));
+  assert.ok(both.countParams.includes("Engleski"));
 });
 
 test("Firmen haben eine naechste Seite ohne Limit 200", () => {

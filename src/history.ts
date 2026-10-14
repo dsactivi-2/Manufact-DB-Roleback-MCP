@@ -229,9 +229,10 @@ export async function listPendingApprovals(session: SqlSession, entityType: stri
 export async function decideApproval(session: SqlSession, approvalId: string, decision: "approved" | "rejected", approver: Actor, now = new Date()): Promise<{ approval_id: string; decision: string; preview_sha256: string; expires_at: string }> {
   await session.query("START TRANSACTION");
   try {
-    const rows = await session.query("SELECT preview_sha256, preview_json, decision, expires_at FROM rb_approvals WHERE approval_id=? FOR UPDATE", [approvalId]);
+    const rows = await session.query("SELECT principal_hash, preview_sha256, preview_json, decision, expires_at FROM rb_approvals WHERE approval_id=? FOR UPDATE", [approvalId]);
     const row = rows.rows[0];
     if (!row || row.decision !== "pending" || String(row.expires_at) <= sqlUtc(now)) throw new CrmError("APPROVAL_EXPIRED", "Freigabeanfrage fehlt oder ist abgelaufen.");
+    if (row.principal_hash && String(row.principal_hash) === principalHash(approver)) throw new CrmError("FORBIDDEN", "Der Antragsteller darf die eigene Freigabe nicht entscheiden.", 403);
     const preview = (typeof row.preview_json === "string" ? JSON.parse(row.preview_json) : row.preview_json) as Preview;
     assertPreviewHash(preview);
     const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
