@@ -1,0 +1,86 @@
+import type { Actor } from "./identity.js";
+
+const BUSINESS_ENTITIES = [
+  "candidate", "company", "order", "candidate_group",
+] as const;
+const CHILD_ENTITIES = [
+  "candidate_education", "candidate_language", "candidate_experience",
+] as const;
+
+const READ_ENTITIES = [
+  ...BUSINESS_ENTITIES,
+  ...CHILD_ENTITIES,
+  "candidate_status",
+] as const;
+
+export const WORKOS_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  "crm-reader": ["crm:read"],
+  "crm-sql": ["crm:read", "sql:read"],
+  "crm-reader-entities": entityPermissions("read"),
+  "crm-writer-approval": [...entityPermissions("read"), ...entityPermissions("request_write")],
+  "crm-writer-auto": [...entityPermissions("read"), ...entityPermissions("write")],
+  "crm-approver": [...entityPermissions("read"), ...entityPermissions("approve_write")],
+};
+
+export function rolesFromPayload(payload: Record<string, unknown>): string[] {
+  const roles = stringList(payload.roles);
+  if (typeof payload.role === "string" && payload.role.trim()) roles.push(payload.role.trim());
+  return [...new Set(roles)];
+}
+
+export function permissionsFromRoles(roles: readonly string[]): string[] {
+  return [...new Set(roles.flatMap((role) => WORKOS_ROLE_PERMISSIONS[role] ?? []))];
+}
+
+export function canReadEntity(actor: Actor, entityType: string): boolean {
+  return validActor(actor) && (actor.scopes.includes("crm:read") || actor.scopes.includes(`crm:${entityType}:read`));
+}
+
+export function canReadAll(actor: Actor, entityTypes: readonly string[]): boolean {
+  return entityTypes.every((entityType) => canReadEntity(actor, entityType));
+}
+
+export function canReadMetadata(actor: Actor): boolean {
+  return validActor(actor) && (actor.scopes.includes("crm:read") || actor.scopes.some((scope) => /^crm:[a-z_]+:read$/.test(scope)));
+}
+
+export function canRequestWrite(actor: Actor, entityType: string): boolean {
+  if (!validNamedActor(actor)) return false;
+  return actor.scopes.includes("crm:write")
+    || actor.scopes.includes(`crm:${entityType}:request_write`)
+    || actor.scopes.includes(`crm:${entityType}:write`);
+}
+
+export function canAutomaticWrite(actor: Actor, entityType: string): boolean {
+  return validNamedActor(actor) && (actor.scopes.includes("crm:write") || actor.scopes.includes(`crm:${entityType}:write`));
+}
+
+export function canApproveWrite(actor: Actor, entityType: string): boolean {
+  return validNamedActor(actor) && actor.scopes.includes(`crm:${entityType}:approve_write`);
+}
+
+export function entityRequiresApproval(access: "read" | "write" | "approve_write", actor: Actor, entityType: string): boolean {
+  return access !== "write" || !canAutomaticWrite(actor, entityType);
+}
+
+export function canWriteAny(actor: Actor): boolean {
+  return validNamedActor(actor) && (actor.scopes.includes("crm:write") || actor.scopes.some((scope) => /^crm:[a-z_]+:(request_write|write|approve_write)$/.test(scope)));
+}
+
+function entityPermissions(operation: "read" | "request_write" | "write" | "approve_write"): string[] {
+  const entities = operation === "read" ? READ_ENTITIES : [...BUSINESS_ENTITIES, ...CHILD_ENTITIES];
+  return entities.map((entity) => `crm:${entity}:${operation}`);
+}
+
+function validActor(actor: Actor): boolean {
+  return actor.subject !== "unknown";
+}
+
+function validNamedActor(actor: Actor): boolean {
+  return validActor(actor) && actor.subject !== "shared-token";
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+}

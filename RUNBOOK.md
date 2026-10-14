@@ -20,8 +20,17 @@ Historija obuhvata promjene izvršene kroz MCP forme. Direktne izmjene drugim pu
 - `CRM_TRANSPORT=cloudflare`
 - `CRM_WORKER_BASE_URL=https://manufact-db-rollback.6f484zn9bd.workers.dev`
 - `CRM_WORKER_SERVICE_TOKEN`: tajna, ista vrijednost kao Worker `MCP_SERVICE_TOKEN`
+- `CRM_MUTATION_TOOLS_ENABLED=false`: history/change/restore alati ostaju skriveni dok se eksplicitno ne odobri njihovo oglasavanje
 - `CRM_IDENTITY_ASSERTION_PRIVATE_KEY`: privatni Ed25519 ključ, tajna
 - postojeće MCP i OAuth varijable ostaju na hostingu
+
+## Izolovani testovi od 13. oktobra 2026.
+
+- Posebna Aiven baza `rollback_test` koristi zasebnog korisnika bez grantova na `jsicrm`.
+- `npm run test:mysql` izvršava testove serijski jer oba scenarija resetuju iste testne `rb_*` tabele.
+- MySQL paket prolazi 4/4: historija i ponovljivost, konflikt dvije konekcije, puni Worker HTTP tok te puni OAuth/MCP/Worker/MySQL preview/approval/apply/history/restore tok.
+- Glavni paket prolazi 31/31, Worker 7/7, oba typechecka, MCP build i Worker dry-run prolaze.
+- Nije izvršen produkcijski deploy niti produkcijski write.
 
 ## Worker konfiguracija
 
@@ -50,7 +59,7 @@ Historija obuhvata promjene izvršene kroz MCP forme. Direktne izmjene drugim pu
 - stvarni poslovni upisi i restore
 - dozvoljena polja za `candidate`
 - DB grantovi za poslovni update
-- R2 audit bucket i automatski outbox proces
+- prvi stvarni R2 arhivski zapis; privatni bucket `manufact-db-rollback-audit`, binding i petominutni cron su deployani, ali produkcijski outbox je trenutno prazan
 - approval forma/operaterski tok
 
 ## Redoslijed aktiviranja
@@ -60,7 +69,21 @@ Historija obuhvata promjene izvršene kroz MCP forme. Direktne izmjene drugim pu
 3. Odrediti tačna polja koja MCP forme smiju mijenjati.
 4. Dodijeliti minimalne grantove samo za ta polja i `rb_*` tabele.
 5. Provesti preview → approval → apply → history → restore test na kontrolisanom zapisu.
-6. Kreirati zaseban R2 audit bucket i provjeriti outbox retry.
+6. Na prvom odobrenom događaju provjeriti da deployani cron `*/5 * * * *` premješta outbox status u `archived` i zapisuje `events/<event_id>.json` u bucket `manufact-db-rollback-audit`.
 7. Tek poslije uspješne provjere uključiti `WRITES_ENABLED`, a zatim posebno `RESTORES_ENABLED`.
+
+## Obavezni preflight i release postupak
+
+1. `npm run preflight` mora proći sa zaključanim produkcijskim zastavicama.
+2. Kopirati `config/activation-plan.example.json` u ignorisani `config/activation-plan.local.json` tek kada odgovorne osobe dostave odluke.
+3. `npm run verify`, `npm run verify:worker` i `npm run test:mysql` moraju proći na istom kandidatu za release.
+4. `npm run preflight:activation` mora proći prije bilo kakve aktivacije.
+5. Prvo objaviti samo MCP mutation alate, uz Worker write i restore zastavice i dalje na `false`.
+6. Pokrenuti `npm run smoke:mutation-tools` sa `MCP_URL` i `MCP_ACCESS_TOKEN`; ovaj smoke ne mijenja CRM podatke.
+7. Nakon odobrenog zapisa i approval toka posebno uključiti write, provesti jedan kontrolisani test i odmah ponovo zaključati pri bilo kakvoj grešci.
+8. Restore se uključuje u zasebnoj promjeni tek nakon uspješnog write testa.
+9. R2 binding i cron aktivirati zasebno; prije deploya potvrditi da produkcijska baza ima `rb_events` i `rb_outbox`, a poslije deploya provjeriti da pending outbox prelazi u `archived`.
+
+Rollback redoslijed je obrnut: prvo `RESTORES_ENABLED=false`, zatim `WRITES_ENABLED=false`, zatim `CRM_MUTATION_TOOLS_ENABLED=false`. Outbox događaji ostaju u MySQL-u i ne brišu se.
 
 Tajne se ne upisuju u repozitorij niti šalju u chat.

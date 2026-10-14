@@ -1,11 +1,12 @@
 import { canonicalJson, newId, sameTyped, sha256, sqlUtc, type TypedValue } from "./canonical.js";
 import { CrmError } from "./crm-error.js";
 import { principalHash, type Actor } from "./identity.js";
+import { entityRequiresApproval } from "./permissions.js";
 import { assertWritableEntity, entityByType, fieldByApi, quoteIdent, type FieldDefinition } from "./registry.js";
 import { isDuplicate, type SqlSession } from "./sql-session.js";
 
 export interface ChangeInput {
-  operation: "change" | "restore";
+  operation: "change" | "restore" | "insert";
   entity_type: string;
   entity_id: string;
   expected_revision: string;
@@ -32,7 +33,7 @@ export interface PreviewField {
 
 export interface Preview {
   preview_sha256: string;
-  operation: "change" | "restore";
+  operation: "change" | "restore" | "insert";
   entity_type: string;
   entity_id: string;
   entity_revision: string;
@@ -47,7 +48,16 @@ export interface ChangeResult {
   request_id: string;
   event_id: string | null;
   revision: string;
+  entity_id?: string;
   field_revisions: Record<string, string>;
+}
+
+export interface ApprovalEvidence {
+  provider: string;
+  decisionBy: string;
+  decision: "approved" | "pending" | "rejected";
+  decidedAt: Date;
+  expiresAt: Date;
 }
 
 interface Locked {
@@ -89,7 +99,10 @@ export async function applyChange(session: SqlSession, input: ChangeInput, actor
       return await replay(session, principal, input, payloadHash);
     }
     const locked = await lockState(session, input, options);
-    if (options.requireApproval) await consumeApproval(session, input, actor, locked.preview, requestId, now);
+    const entity = entityByType(input.entity_type);
+    if (options.requireApproval && entityRequiresApproval(entity.access, actor, entity.entityType)) {
+      await consumeApproval(session, input, actor, locked.preview, requestId, now);
+    }
     const changed = locked.changes.filter((item) => !sameTyped(item.before, item.after));
     let eventId: string | null = null;
     let revision = BigInt(locked.preview.entity_revision);
@@ -104,35 +117,50 @@ export async function applyChange(session: SqlSession, input: ChangeInput, actor
       return result;
     }
     if (options.failBefore === "event") throw new CrmError("HISTORY_FAILURE", "Historieneintrag fehlgeschlagen.", 500);
-    const entity = entityByType(input.entity_type);
+    assertWritableEntity(entity, options.allowTestEntities);
     const table = quoteIdent(entity.table);
     const pk = quoteIdent(entity.primaryKey);
-    await session.query(
-      "UPDATE " + table + " SET " + changed.map((item) => quoteIdent(item.field.column) + "=?").join(", ") + " WHERE " + pk + "=?",
-      [...changed.map((item) => wire(item.after)), input.entity_id],
-    );
+    let recordId = input.entity_id;
+    if (input.operation === "insert") {
+      if (!entity.operations.insert) throw new CrmError("INVALID_INPUT", "Insert ist fuer diesen Datensatz nicht freigegeben.");
+      const inserted = await session.query(
+        "INSERT INTO " + table + " (" + changed.map((item) => quoteIdent(item.field.column)).join(", ") + ") VALUES (" + changed.map(() => "?").join(", ") + ")",
+        changed.map((item) => wire(item.after)),
+      );
+      if (!inserted.insertId || inserted.insertId === "0") throw new CrmError("HISTORY_FAILURE", "Neue Zeile hat keine ID.", 500);
+      recordId = inserted.insertId;
+      await session.query("INSERT INTO rb_entity_state (entity_type, entity_id, revision, baseline_at) VALUES (?,?,0,?)", [input.entity_type, recordId, sqlUtc(now)]);
+      for (const item of changed) {
+        await session.query("INSERT INTO rb_field_state (entity_type, entity_id, field_name, revision) VALUES (?,?,?,0)", [input.entity_type, recordId, item.field.apiField]);
+      }
+    } else {
+      await session.query(
+        "UPDATE " + table + " SET " + changed.map((item) => quoteIdent(item.field.column) + "=?").join(", ") + " WHERE " + pk + "=?",
+        [...changed.map((item) => wire(item.after)), recordId],
+      );
+    }
     revision += 1n;
-    const updated = await session.query("UPDATE rb_entity_state SET revision=? WHERE entity_type=? AND entity_id=? AND revision=?", [revision.toString(), input.entity_type, input.entity_id, locked.preview.entity_revision]);
+    const updated = await session.query("UPDATE rb_entity_state SET revision=? WHERE entity_type=? AND entity_id=? AND revision=?", [revision.toString(), input.entity_type, recordId, locked.preview.entity_revision]);
     if (updated.affectedRows !== 1) throw new CrmError("REVISION_CONFLICT", "Revision hat sich geaendert.");
     for (const item of changed) {
       const next = item.revision + 1n;
       const fieldUpdate = await session.query(
         "UPDATE rb_field_state SET revision=? WHERE entity_type=? AND entity_id=? AND field_name=? AND revision=?",
-        [next.toString(), input.entity_type, input.entity_id, item.field.apiField, item.revision.toString()],
+        [next.toString(), input.entity_type, recordId, item.field.apiField, item.revision.toString()],
       );
       if (fieldUpdate.affectedRows !== 1) throw new CrmError("REVISION_CONFLICT", "Feldrevision hat sich geaendert.");
       fieldRevisions[item.field.apiField] = next.toString();
     }
-    if (locked.preview.entity_revision === "0") await captureBaseline(session, input, locked, now);
+    if (locked.preview.entity_revision === "0") await captureBaseline(session, { ...input, entity_id: recordId }, locked, now);
     eventId = newId();
     const typedChanges = Object.fromEntries(changed.map((item) => [item.field.apiField, { before: item.before, after: item.after, field_revision_before: item.revision.toString(), field_revision_after: (item.revision + 1n).toString() }]));
-    const eventBody = { event_id: eventId, entity_type: input.entity_type, entity_id: input.entity_id, revision_before: locked.preview.entity_revision, revision_after: revision.toString(), operation: input.operation, actor_issuer: actor.issuer, actor_subject: actor.subject, request_id: requestId, source_event_id: input.source_event_id ?? null, created_at: sqlUtc(now), typed_changes: typedChanges, reason: input.reason };
+    const eventBody = { event_id: eventId, entity_type: input.entity_type, entity_id: recordId, revision_before: locked.preview.entity_revision, revision_after: revision.toString(), operation: input.operation, actor_issuer: actor.issuer, actor_subject: actor.subject, request_id: requestId, source_event_id: input.source_event_id ?? null, created_at: sqlUtc(now), typed_changes: typedChanges, reason: input.reason };
     await session.query(
       "INSERT INTO rb_events (event_id, entity_type, entity_id, revision_before, revision_after, operation, actor_issuer, actor_subject, request_id, source_event_id, created_at, typed_changes, reason, event_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      [eventId, input.entity_type, input.entity_id, locked.preview.entity_revision, revision.toString(), input.operation, actor.issuer, actor.subject, requestId, input.source_event_id ?? null, sqlUtc(now), canonicalJson(typedChanges), input.reason, sha256(canonicalJson(eventBody))],
+      [eventId, input.entity_type, recordId, locked.preview.entity_revision, revision.toString(), input.operation, actor.issuer, actor.subject, requestId, input.source_event_id ?? null, sqlUtc(now), canonicalJson(typedChanges), input.reason, sha256(canonicalJson(eventBody))],
     );
     await session.query("INSERT INTO rb_outbox (event_id, status, attempts, next_attempt_at) VALUES (?,?,0,?)", [eventId, "pending", sqlUtc(now)]);
-    const result = finish(requestId, eventId, revision, fieldRevisions, "applied");
+    const result = { ...finish(requestId, eventId, revision, fieldRevisions, "applied"), entity_id: recordId };
     await session.query("UPDATE rb_requests SET result_json=?, completed_at=? WHERE request_id=?", [canonicalJson(result), sqlUtc(now), requestId]);
     await session.query("COMMIT");
     committed = true;
@@ -147,9 +175,10 @@ export async function applyChange(session: SqlSession, input: ChangeInput, actor
 }
 
 export async function restorePatchFromEvent(session: SqlSession, entityType: string, entityId: string, eventId: string, fields: string[]): Promise<Record<string, string | null>> {
-  const rows = await session.query("SELECT entity_type, entity_id, typed_changes FROM rb_events WHERE event_id=?", [eventId]);
+  const rows = await session.query("SELECT entity_type, entity_id, operation, typed_changes FROM rb_events WHERE event_id=?", [eventId]);
   const row = rows.rows[0];
   if (!row || row.entity_type !== entityType || row.entity_id !== entityId) throw new CrmError("INVALID_INPUT", "History-Ereignis gehoert nicht zu diesem Datensatz.");
+  if (row.operation === "insert") throw new CrmError("INVALID_INPUT", "Eine neue Zeile kann ohne DELETE nicht entfernt werden.");
   const changes = typeof row.typed_changes === "string" ? JSON.parse(row.typed_changes) as Record<string, { before?: TypedValue }> : row.typed_changes as Record<string, { before?: TypedValue }>;
   const patch: Record<string, string | null> = {};
   for (const name of fields) {
@@ -160,16 +189,69 @@ export async function restorePatchFromEvent(session: SqlSession, entityType: str
   return patch;
 }
 
-export async function insertApproval(session: SqlSession, actor: Actor, preview: Preview, decision: "approved" | "pending" | "rejected", expiresAt: Date): Promise<string> {
+export async function insertApproval(session: SqlSession, actor: Actor, preview: Preview, evidence: ApprovalEvidence): Promise<string> {
+  if (!/^[A-Za-z0-9._-]{2,64}$/.test(evidence.provider)) throw new CrmError("INVALID_INPUT", "Approval-Provider ist ungueltig.");
+  if (!/^[A-Za-z0-9@._:-]{2,128}$/.test(evidence.decisionBy)) throw new CrmError("INVALID_INPUT", "Approval-Identitaet ist ungueltig.");
+  if (!Number.isFinite(evidence.decidedAt.getTime()) || !Number.isFinite(evidence.expiresAt.getTime())) throw new CrmError("INVALID_INPUT", "Approval-Zeit ist ungueltig.");
+  const lifetime = evidence.expiresAt.getTime() - evidence.decidedAt.getTime();
+  if (lifetime <= 0 || lifetime > 24 * 60 * 60 * 1000) throw new CrmError("INVALID_INPUT", "Approval-Laufzeit ist ungueltig.");
+  assertPreviewHash(preview);
   const approvalId = newId();
   await session.query(
     "INSERT INTO rb_approvals (approval_id, principal_hash, preview_sha256, preview_json, decision, decision_by, decided_at, expires_at) VALUES (?,?,?,?,?,?,?,?)",
-    [approvalId, principalHash(actor), preview.preview_sha256, canonicalJson(preview), decision, "trusted-operator", sqlUtc(new Date()), sqlUtc(expiresAt)],
+    [approvalId, principalHash(actor), preview.preview_sha256, canonicalJson(preview), evidence.decision, `${evidence.provider}:${evidence.decisionBy}`, sqlUtc(evidence.decidedAt), sqlUtc(evidence.expiresAt)],
   );
   return approvalId;
 }
 
+export async function requestApproval(session: SqlSession, actor: Actor, preview: Preview, now = new Date()): Promise<string> {
+  assertPreviewHash(preview);
+  const approvalId = newId();
+  await session.query(
+    "INSERT INTO rb_approvals (approval_id, principal_hash, preview_sha256, preview_json, decision, decision_by, decided_at, expires_at) VALUES (?,?,?,?,?,NULL,NULL,?)",
+    [approvalId, principalHash(actor), preview.preview_sha256, canonicalJson(preview), "pending", sqlUtc(new Date(now.getTime() + 24 * 60 * 60 * 1000))],
+  );
+  return approvalId;
+}
+
+export async function listPendingApprovals(session: SqlSession, entityType: string): Promise<Array<Record<string, unknown>>> {
+  const rows = await session.query(
+    "SELECT approval_id, preview_sha256, preview_json, expires_at FROM rb_approvals WHERE decision='pending' AND JSON_UNQUOTE(JSON_EXTRACT(preview_json, '$.entity_type'))=? ORDER BY expires_at ASC LIMIT 50",
+    [entityType],
+  );
+  return rows.rows.map((row) => ({
+    approval_id: String(row.approval_id), preview_sha256: String(row.preview_sha256),
+    preview: typeof row.preview_json === "string" ? JSON.parse(row.preview_json) : row.preview_json,
+    expires_at: String(row.expires_at),
+  }));
+}
+
+export async function decideApproval(session: SqlSession, approvalId: string, decision: "approved" | "rejected", approver: Actor, now = new Date()): Promise<{ approval_id: string; decision: string; preview_sha256: string; expires_at: string }> {
+  await session.query("START TRANSACTION");
+  try {
+    const rows = await session.query("SELECT preview_sha256, preview_json, decision, expires_at FROM rb_approvals WHERE approval_id=? FOR UPDATE", [approvalId]);
+    const row = rows.rows[0];
+    if (!row || row.decision !== "pending" || String(row.expires_at) <= sqlUtc(now)) throw new CrmError("APPROVAL_EXPIRED", "Freigabeanfrage fehlt oder ist abgelaufen.");
+    const preview = (typeof row.preview_json === "string" ? JSON.parse(row.preview_json) : row.preview_json) as Preview;
+    assertPreviewHash(preview);
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+    const updated = await session.query("UPDATE rb_approvals SET decision=?, decision_by=?, decided_at=?, expires_at=? WHERE approval_id=? AND decision='pending'", [decision, `internal:${approver.subject}`, sqlUtc(now), sqlUtc(expiresAt), approvalId]);
+    if (updated.affectedRows !== 1) throw new CrmError("APPROVAL_EXPIRED", "Freigabeanfrage wurde bereits entschieden.");
+    await session.query("COMMIT");
+    return { approval_id: approvalId, decision, preview_sha256: String(row.preview_sha256), expires_at: expiresAt.toISOString() };
+  } catch (error) {
+    await rollbackQuiet(session);
+    throw error;
+  }
+}
+
+function assertPreviewHash(preview: Preview): void {
+  const { preview_sha256: suppliedHash, ...unsignedPreview } = preview;
+  if (sha256(canonicalJson(unsignedPreview)) !== suppliedHash) throw new CrmError("INVALID_INPUT", "Approval-Vorschau wurde veraendert.");
+}
+
 async function lockState(session: SqlSession, input: ChangeInput, options: ApplyOptions): Promise<Locked> {
+  if (input.operation === "insert") return lockInsert(session, input, options);
   const entity = entityByType(input.entity_type);
   assertWritableEntity(entity, options.allowTestEntities);
   const parsed = parsePatch(entity, input.patch);
@@ -236,6 +318,26 @@ function finish(requestId: string, eventId: string | null, revision: bigint, fie
   return { status, request_id: requestId, event_id: eventId, revision: revision.toString(), field_revisions: fieldRevisions };
 }
 
+async function lockInsert(session: SqlSession, input: ChangeInput, options: ApplyOptions): Promise<Locked> {
+  const entity = entityByType(input.entity_type);
+  assertWritableEntity(entity, options.allowTestEntities);
+  if (!entity.operations.insert) throw new CrmError("INVALID_INPUT", "Insert ist fuer diesen Datensatz nicht freigegeben.");
+  const parsed = parsePatch(entity, input.patch);
+  for (const field of entity.fields) {
+    if (!field.nullable && !parsed.some((item) => item.field.apiField === field.apiField)) throw new CrmError("INVALID_INPUT", "Pflichtfeld fehlt.");
+  }
+  const parent = parsed.find((item) => item.field.apiField === "candidate_id");
+  if (!parent || parent.after.type !== "integer") throw new CrmError("INVALID_INPUT", "Kandidat fehlt.");
+  const parentRows = await session.query("SELECT kandidat_id FROM idk_kandidati WHERE kandidat_id=? LIMIT 1", [parent.after.value]);
+  if (!parentRows.rows[0]) throw new CrmError("INVALID_INPUT", "Kandidat wurde nicht gefunden.");
+  const changes = parsed.map((item) => ({ field: item.field, before: { type: "null" } as TypedValue, after: item.after, revision: 0n }));
+  const fields = changes.map((item) => ({ name: item.field.apiField, before: item.before, after: item.after, field_revision: "0" })).sort((a, b) => a.name.localeCompare(b.name));
+  const previewWithoutHash = { operation: "insert" as const, entity_type: input.entity_type, entity_id: "new", entity_revision: "0", source_event_id: null, reason: input.reason, fields };
+  const preview: Preview = { ...previewWithoutHash, preview_sha256: sha256(canonicalJson(previewWithoutHash)) };
+  const allBefore = Object.fromEntries(entity.fields.map((field) => [field.apiField, { type: "null" as const }]));
+  return { preview, changes, allBefore };
+}
+
 function parsePatch(entity: ReturnType<typeof entityByType>, patch: Record<string, string | null>) {
   const entries = Object.entries(patch);
   if (entries.length === 0) throw new CrmError("INVALID_INPUT", "Patch ist leer.");
@@ -273,7 +375,8 @@ function asBig(value: unknown): bigint {
 }
 
 function validateInput(input: ChangeInput): void {
-  if (input.operation !== "change" && input.operation !== "restore") throw new CrmError("INVALID_INPUT", "Operation ist nicht zugelassen.");
+  if (input.operation !== "change" && input.operation !== "restore" && input.operation !== "insert") throw new CrmError("INVALID_INPUT", "Operation ist nicht zugelassen.");
+  if (input.operation === "insert" && (input.entity_id !== "new" || input.expected_revision !== "0")) throw new CrmError("INVALID_INPUT", "Neue Zeile braucht entity_id new und Revision 0.");
   if (!/^[A-Za-z0-9._:-]{1,191}$/.test(input.entity_id)) throw new CrmError("INVALID_INPUT", "Datensatz-ID ist ungueltig.");
   if (!/^\d+$/.test(input.expected_revision)) throw new CrmError("INVALID_INPUT", "Revision ist ungueltig.");
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(input.idempotency_key)) throw new CrmError("INVALID_INPUT", "Idempotenzschluessel ist ungueltig.");

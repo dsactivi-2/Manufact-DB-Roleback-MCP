@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { sha256 } from "./canonical.js";
+import { permissionsFromRoles, rolesFromPayload } from "./permissions.js";
 
 export interface Actor {
   issuer: string;
@@ -23,10 +24,11 @@ export function actorFromSharedToken(): Actor {
   return { issuer: MCP_ISSUER, subject: "shared-token", scopes: ["crm:read"] };
 }
 
-export function actorFromOAuth(auth: { user?: { id?: string }; payload?: Record<string, unknown>; scopes?: string[] }): Actor {
+export function actorFromOAuth(auth: { user?: { id?: string }; payload?: Record<string, unknown>; scopes?: string[]; permissions?: string[] }): Actor {
   const payload = auth.payload ?? {};
   const subject = typeof payload.sub === "string" && payload.sub.trim() ? payload.sub.trim() : "";
-  const scopes = [...new Set((auth.scopes ?? []).filter((scope) => scope !== "crm:write" || subject.length > 0))];
+  const granted = [...(auth.scopes ?? []), ...(auth.permissions ?? []), ...permissionsFromRoles(rolesFromPayload(payload))];
+  const scopes = [...new Set(granted.filter((scope) => scope !== "crm:write" || subject.length > 0))];
   if (!subject) return { issuer: MCP_ISSUER, subject: auth.user?.id || "unknown", scopes: scopes.filter((scope) => scope !== "crm:write") };
   return { issuer: MCP_ISSUER, subject, scopes };
 }

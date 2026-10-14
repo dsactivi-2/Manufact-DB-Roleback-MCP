@@ -11,8 +11,45 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   return nextResolve(specifier, context);
 }});
 const { createWorkerClient, validateWorkerSettings } = await import("../src/worker-client.ts");
+const { exportPem } = await import("../src/identity.ts");
 const { buildOrderSearch } = await import("../src/sql.ts");
 const settings = { CRM_TRANSPORT: "cloudflare", CRM_WORKER_BASE_URL: "https://gateway.example.com", CRM_WORKER_SERVICE_TOKEN: "a".repeat(48) };
+const mutationSettings = {
+  ...settings,
+  CRM_MCP_SERVER_TOKEN: "test-token",
+  CRM_MUTATION_TOOLS_ENABLED: "true",
+  CRM_MUTATION_POLICY_VERSION: "test-policy-v1",
+  CRM_IDENTITY_ASSERTION_PRIVATE_KEY: "test-private-key",
+  OAUTH_ISSUER: "https://login.example.com/",
+  OAUTH_AUTHORIZATION_ENDPOINT: "https://login.example.com/authorize",
+  OAUTH_TOKEN_ENDPOINT: "https://login.example.com/token",
+  OAUTH_JWKS_URL: "https://login.example.com/jwks",
+  OAUTH_RESOURCE: "https://mcp.example.com/mcp",
+};
+
+function rpcMessage(text: string) {
+  const messageText = text.startsWith("{") ? text : text.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+  assert.ok(messageText);
+  return JSON.parse(messageText);
+}
+
+async function rpc(server: { fetch(request: Request): Promise<Response> }, name: string, params: Record<string, unknown>, id = 1) {
+  const headers = new Headers({
+    authorization: "Bearer test-token", accept: "application/json, text/event-stream", "content-type": "application/json",
+  });
+  const initialized = await server.fetch(new Request("https://mcp.example.com/mcp", {
+    method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "mutation-test", version: "1" } } }),
+  }));
+  assert.equal(initialized.status, 200);
+  const session = initialized.headers.get("mcp-session-id");
+  if (session) headers.set("mcp-session-id", session);
+  const response = await server.fetch(new Request("https://mcp.example.com/mcp", {
+    method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: id + 1, method: name, params }),
+  }));
+  assert.equal(response.status, 200);
+  return rpcMessage(await response.text());
+}
 test("Worker prevoz zahtijeva siguran origin i vlastiti token", () => {
   assert.throws(() => validateWorkerSettings({ ...settings, CRM_WORKER_BASE_URL: "http://gateway.example.com" }));
   assert.throws(() => validateWorkerSettings({ ...settings, CRM_WORKER_BASE_URL: "https://token@gateway.example.com" }));
@@ -47,6 +84,24 @@ test("Nalozi koriste stvarnu kolonu uz postojeci naziv izlaza", () => {
   const plan = buildOrderSearch({ q: "test" });
   assert.match(plan.rowSql, /nalog_naziv AS nalog_naslov/);
   assert.match(plan.countSql, /nalog_naziv LIKE/);
+});
+test("Mutation adapter salje tipiziran i potpisan preview zahtjev Workeru", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const privatePem = await exportPem(pair.privateKey, "pkcs8");
+  const client = createWorkerClient({ ...settings, CRM_IDENTITY_ASSERTION_PRIVATE_KEY: privatePem }, (async (url, init) => {
+    assert.equal(String(url), "https://gateway.example.com/v1/changes/preview");
+    assert.ok(new Headers(init?.headers).get("x-crm-identity"));
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      entity_type: "synthetic_candidate", entity_id: "TEST-1", expected_revision: "0",
+      patch: { telephone: "+49-1" }, reason: "Kontrollierter Test", idempotency_key: "preview-test-0001",
+    });
+    return Response.json({ ok: true, result: { entity_revision: "0", preview_sha256: "f".repeat(64), fields: [] } });
+  }) as typeof fetch);
+  const response = await client.post("/v1/changes/preview", {
+    entity_type: "synthetic_candidate", entity_id: "TEST-1", expected_revision: "0",
+    patch: { telephone: "+49-1" }, reason: "Kontrollierter Test", idempotency_key: "preview-test-0001",
+  }, { issuer: "manufact-db-rollback-mcp", subject: "preview-user", scopes: ["crm:read", "crm:write"] });
+  assert.deepEqual(response, { entity_revision: "0", preview_sha256: "f".repeat(64), fields: [] });
 });
 test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () => {
   const { createCloudCrmServer } = await import("../index.ts");
@@ -86,13 +141,22 @@ test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () =>
       }),
     }));
     assert.equal(callResponse.status, 200);
-    const body = await callResponse.text();
-    const messageText = body.startsWith("{") ? body : body.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
-    assert.ok(messageText);
-    const message = JSON.parse(messageText);
+    const message = rpcMessage(await callResponse.text());
     assert.equal(message.error, undefined);
     assert.equal(message.result.isError, undefined);
     assert.deepEqual(message.result.structuredContent, { kandidaten: 4, aktiv: 3, firmen: 2, auftraege: 1 });
     assert.equal(gatewayCalls, 1);
   } finally { globalThis.fetch = originalFetch; }
+});
+test("MCP mutation alati su skriveni po defaultu i kompletni uz opt-in", async () => {
+  const { createCloudCrmServer } = await import("../index.ts");
+  const disabled = await rpc(createCloudCrmServer({ ...settings, CRM_MCP_SERVER_TOKEN: "test-token" }), "tools/list", {});
+  const disabledNames = disabled.result.tools.map((tool: { name: string }) => tool.name);
+  assert.equal(disabledNames.some((name: string) => name.startsWith("crm_change_") || name.startsWith("crm_restore_") || name === "crm_history_list"), false);
+
+  const enabled = await rpc(createCloudCrmServer(mutationSettings), "tools/list", {}, 10);
+  const enabledNames = enabled.result.tools.map((tool: { name: string }) => tool.name);
+  for (const name of ["crm_history_list", "crm_change_preview", "crm_change_apply", "crm_restore_preview", "crm_restore_apply", "crm_write_request_approval", "crm_write_approval_list", "crm_write_decide"]) {
+    assert.ok(enabledNames.includes(name), name);
+  }
 });

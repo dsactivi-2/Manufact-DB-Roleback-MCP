@@ -1,0 +1,14 @@
+{
+  "policyVersion": null,
+  "readAuthorizationDecision": null,
+  "writeAuthorizationDecision": null,
+  "approvalProvider": null,
+  "realEntities": [],
+  "approvedTestRecord": null,
+  "r2": {
+    "bucketName": null,
+    "cron": null
+  },
+  "approvedBy": null,
+  "approvedAt": null
+}

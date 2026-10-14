@@ -3,6 +3,7 @@ import mysql from "mysql2/promise";
 export interface SqlResult {
   rows: Array<Record<string, unknown>>;
   affectedRows: number;
+  insertId?: string;
 }
 
 export interface SqlSession {
@@ -28,7 +29,8 @@ export function wrap(connection: mysql.Connection): SqlSession {
       const [result] = await connection.query(sql, params as never[]);
       if (Array.isArray(result)) return { rows: result as Array<Record<string, unknown>>, affectedRows: result.length };
       const header = result as mysql.ResultSetHeader;
-      return { rows: [], affectedRows: header.affectedRows };
+      const insertId = header.insertId ? String(header.insertId) : undefined;
+      return { rows: [], affectedRows: header.affectedRows, insertId };
     },
     async release() {
       await connection.end();

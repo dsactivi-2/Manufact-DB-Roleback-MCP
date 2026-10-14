@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { createJwtVerifier, oauthCustomProvider, type OAuthMetadata, type OAuthProvider } from "mcp-use/oauth";
+import { permissionsFromRoles, rolesFromPayload } from "./permissions.js";
 
 export const BASELINE_SCOPE = "crm:read";
 export const SQL_SCOPE = "sql:read";
@@ -113,7 +114,7 @@ function workosSettings(env: NodeJS.ProcessEnv): {
 
 function collectScopes(info: AuthInfo): string[] {
   const payload = record(info.extra?.payload);
-  return [...new Set([...info.scopes, ...stringList(payload.permissions), ...stringList(payload.scp)])];
+  return [...new Set([...info.scopes, ...stringList(payload.permissions), ...stringList(payload.scp), ...permissionsFromRoles(rolesFromPayload(payload))])];
 }
 
 function sameSecret(presented: string, expected: string): boolean {

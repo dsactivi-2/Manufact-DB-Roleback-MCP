@@ -3,7 +3,7 @@ import { CrmError } from "./crm-error.js";
 import type { SqlSession } from "./sql-session.js";
 
 export interface ArchivePut {
-  put(key: string, body: string): Promise<void>;
+  put(key: string, body: string): Promise<unknown>;
 }
 
 export async function archiveDue(session: SqlSession, archive: ArchivePut, now = new Date(), limit = 10): Promise<{ claimed: number; archived: number }> {

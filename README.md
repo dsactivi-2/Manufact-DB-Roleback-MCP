@@ -37,7 +37,11 @@ The earlier statement that deployment `c0be2dd3` was current on 6 October 2026 r
 
 `CRM_TRANSPORT=cloudflare`, `CRM_WORKER_BASE_URL`, and `CRM_WORKER_SERVICE_TOKEN` connect the MCP to the Worker. The MCP does not need a database URL on this path.
 
-The history, approval, selective restore, and outbox implementation is merged with that connection. Production writes and restores stay disabled until field permissions and an approval flow pass an end-to-end test. See [docs/Arbeitsstand.md](docs/Arbeitsstand.md) and [RUNBOOK.md](RUNBOOK.md).
+The history, approval, selective restore, and outbox implementation is merged with that connection. Typed MCP history/change/restore tools are available behind `CRM_MUTATION_TOOLS_ENABLED=true`; they remain hidden by default. Production writes and restores stay disabled until field permissions and an approval flow pass an end-to-end test. See [docs/Status_2026-10-13.md](docs/Status_2026-10-13.md), [docs/Arbeitsstand.md](docs/Arbeitsstand.md), and [RUNBOOK.md](RUNBOOK.md).
+
+`npm run preflight` verifies the repository and the locked production defaults. The private `manufact-db-rollback-audit` R2 bucket, the `AUDIT_ARCHIVE` binding, and the five-minute outbox cron are deployed. `npm run preflight:activation` intentionally fails until `config/activation-plan.local.json` and the real entity allowlist are complete. Copy `config/activation-plan.example.json` only after the responsible owners provide those decisions; the local plan is ignored by Git.
+
+Release verification commands are `npm run verify`, `npm run verify:worker`, and `npm run test:mysql`. The MySQL suite uses only the separately provisioned `rollback_test` database. After the first tools-only deployment, `npm run smoke:mutation-tools` checks tool advertisement without applying a CRM change.
 
 Was noch eingesetzt werden muss, steht in [RUNBOOK.md](RUNBOOK.md).
 

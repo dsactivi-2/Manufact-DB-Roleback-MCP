@@ -50,3 +50,4 @@ Thumbs.db
 *client.local.cnf
 
 .gateway-runtime.local.json
+config/activation-plan.local.json

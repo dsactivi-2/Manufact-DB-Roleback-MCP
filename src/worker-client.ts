@@ -26,7 +26,7 @@ export function createWorkerClient(env: NodeJS.ProcessEnv, fetchImpl: typeof fet
   const privateKey = env.CRM_IDENTITY_ASSERTION_PRIVATE_KEY ?? "";
   async function post(path: string, input: unknown, actor: Actor): Promise<unknown> {
     if (env.CRM_TRANSPORT !== "cloudflare") throw new Error("CRM_TRANSPORT=cloudflare nije aktivan.");
-    if (!/^\/v1\/(read|changes|restores|history)\/[a-z_]+$/.test(path)) throw new Error("Nepoznata Worker ruta.");
+    if (!/^\/v1\/(read|changes|restores|history|approvals)\/[a-z_]+$/.test(path)) throw new Error("Nepoznata Worker ruta.");
     const raw = JSON.stringify(input ?? {});
     const headers: Record<string, string> = { authorization: "Bearer " + token, "content-type": "application/json" };
     if (privateKey) headers["x-crm-identity"] = await signAssertion(privateKey, { actor, audience: WORKER_AUDIENCE, requestSha256: sha256(raw) });

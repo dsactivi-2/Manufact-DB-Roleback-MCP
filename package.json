@@ -25,7 +25,15 @@
     "deploy": "mcp-use deploy",
     "typecheck": "mcp-use typecheck",
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "test:mysql": "node --experimental-strip-types --test test/mysql/history.mysql.test.ts"
+    "test:mysql": "node --experimental-strip-types --test --test-concurrency=1 test/mysql/*.test.ts",
+    "preflight": "node --experimental-strip-types scripts/preflight.mjs",
+    "preflight:activation": "node --experimental-strip-types scripts/preflight.mjs --activation",
+    "verify": "npm run preflight && npm test && npm run typecheck && npm run build",
+    "verify:worker": "npm --prefix cloudflare/worker test && npm --prefix cloudflare/worker run typecheck && npm --prefix cloudflare/worker run build",
+    "smoke:mutation-tools": "node scripts/smoke-mutation-tools.mjs",
+    "check:production-history": "node scripts/check-production-history-tables.mjs",
+    "inventory:production-schema": "node scripts/inventory-production-schema.mjs"
+    ,"grant:minimal": "node --experimental-strip-types scripts/grant-minimal.mjs"
   },
   "dependencies": {
     "mcp-use": "2.7.3",

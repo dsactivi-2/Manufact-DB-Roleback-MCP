@@ -19,6 +19,15 @@
       "id": "086fd3f6d396445eb3db0cb64f5ff9c7"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "AUDIT_ARCHIVE",
+      "bucket_name": "manufact-db-rollback-audit"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "observability": {
     "enabled": true,
     "logs": { "enabled": true },

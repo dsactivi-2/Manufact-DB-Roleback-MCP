@@ -1,11 +1,14 @@
 import { MCPServer } from "mcp-use";
 import { z } from "zod";
+import { mutationSchemas } from "./contracts/mutations.js";
+import { assertMcpMutationConfiguration } from "./src/config.js";
 import { createOAuthProvider } from "./src/auth.js";
 import { actorFromOAuth, actorFromSharedToken, type Actor } from "./src/identity.js";
 import { createWorkerClient } from "./src/worker-client.js";
 import { openDatabase } from "./src/db.js";
 import { assertSeparateInfrastructure } from "./src/guard.js";
 import { GUIDE_JSON_URI, GUIDE_MARKDOWN_URI, readGuide } from "./src/guides.js";
+import { publicEntityPolicies } from "./src/registry.js";
 import {
   runBerufReport,
   runCandidateSearch,
@@ -20,6 +23,7 @@ import {
 } from "./src/read.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
+const mutating = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 let database: Db | null = null;
 let databaseEnv: NodeJS.ProcessEnv = process.env;
 
@@ -28,7 +32,7 @@ export function setDatabase(next: Db | null): void {
 }
 
 
-type AuthCtx = { auth?: { user?: { id?: string }; payload?: Record<string, unknown>; scopes?: string[] } };
+type AuthCtx = { auth?: { user?: { id?: string }; payload?: Record<string, unknown>; scopes?: string[]; permissions?: string[] } };
 
 function actorFor(ctx?: AuthCtx): Actor {
   if (ctx?.auth) return actorFromOAuth(ctx.auth);
@@ -62,6 +66,7 @@ function ok(data: unknown) {
 
 export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
   assertSeparateInfrastructure(env);
+  assertMcpMutationConfiguration(env);
   databaseEnv = env;
   database = null;
   if (env.CRM_TRANSPORT && !["direct", "cloudflare"].includes(env.CRM_TRANSPORT)) throw new Error("Nepoznat CRM_TRANSPORT.");
@@ -182,6 +187,14 @@ server.tool({
 
 
 server.tool({
+  name: "crm_entity_policy_list",
+  title: "CRM-Entitaeten und Rechte anzeigen",
+  description: "Zeigt alle fachlichen CRM-Entitaeten mit READ, WRITE oder APPROVE_WRITE, erlaubten Operationen und freigegebenen Feldern.",
+  inputSchema: z.object({}).strict(),
+  annotations: readOnly,
+}, async () => ok({ default_write_access: "approve_write", entities: publicEntityPolicies() }));
+
+server.tool({
   name: "crm_search_guide",
   title: "CRM-Suchleitfaden",
   description: "Regeln fuer die lesenden Werkzeuge, ohne Geheimnisse.",
@@ -221,7 +234,68 @@ server.resource({
 }));
 
 
-  // Write/restore/history tools are intentionally not advertised until entity types, writable fields, revisions and approval contracts are bounded and documented.
+  if (env.CRM_MUTATION_TOOLS_ENABLED === "true") {
+    server.tool({
+      name: "crm_history_list",
+      title: "Aenderungsverlauf anzeigen",
+      description: "Bis zu 50 versionierte Aenderungs- und Wiederherstellungsereignisse fuer genau einen Datensatz anzeigen.",
+      inputSchema: mutationSchemas.history,
+      annotations: readOnly,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/history/list", args)));
+
+    server.tool({
+      name: "crm_change_preview",
+      title: "CRM-Aenderung pruefen",
+      description: "Eine Aenderung ohne dauerhaften Schreibvorgang pruefen. Liefert aktuelle Revision, Vorher-/Nachher-Werte und einen Hash fuer die externe Freigabe.",
+      inputSchema: mutationSchemas.changePreview,
+      annotations: readOnly,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/changes/preview", args)));
+
+    server.tool({
+      name: "crm_change_apply",
+      title: "Freigegebene CRM-Aenderung anwenden",
+      description: "Eine zuvor gepruefte und extern freigegebene Aenderung atomar anwenden. Benoetigt Schreibrolle, passende Revision, einmalige Freigabe und Idempotenzschluessel.",
+      inputSchema: mutationSchemas.changeApply,
+      annotations: mutating,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/changes/apply", args)));
+
+    server.tool({
+      name: "crm_restore_preview",
+      title: "Selektive Wiederherstellung pruefen",
+      description: "Aus einem History-Ereignis nur die angegebenen Felder zur Wiederherstellung vorbereiten, ohne dauerhaft zu schreiben.",
+      inputSchema: mutationSchemas.restorePreview,
+      annotations: readOnly,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/restores/preview", args)));
+
+    server.tool({
+      name: "crm_restore_apply",
+      title: "Freigegebene Wiederherstellung anwenden",
+      description: "Eine zuvor gepruefte selektive Wiederherstellung als neues History-Ereignis atomar anwenden. Benoetigt Schreibrolle und externe Freigabe.",
+      inputSchema: mutationSchemas.restoreApply,
+      annotations: mutating,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/restores/apply", args)));
+
+    server.tool({
+      name: "crm_write_request_approval",
+      description: "Eine unveraenderte Schreib- oder Restore-Vorschau zur internen Freigabe einreichen.",
+      inputSchema: mutationSchemas.approvalRequest,
+      annotations: mutating,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/approvals/request", args)));
+
+    server.tool({
+      name: "crm_write_approval_list",
+      description: "Offene interne Freigaben fuer einen Entitaetstyp auflisten. Nur fuer CRM Approver.",
+      inputSchema: mutationSchemas.approvalList,
+      annotations: readOnly,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/approvals/list", args)));
+
+    server.tool({
+      name: "crm_write_decide",
+      description: "Eine offene interne Freigabe genehmigen oder ablehnen. Nur fuer CRM Approver.",
+      inputSchema: mutationSchemas.approvalDecide,
+      annotations: mutating,
+    }, async (args, ctx) => ok(await performWrite(ctx, "/v1/approvals/decide", args)));
+  }
 
   return server;
 }

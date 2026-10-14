@@ -29,6 +29,11 @@ const url = process.env.MYSQL_TEST_URL ?? "";
 const actor: Actor = { issuer: MCP_ISSUER, subject: "user-1", scopes: ["crm:read", "crm:write"] };
 const options: ApplyOptions = { allowTestEntities: true, requireApproval: true };
 
+function approval() {
+  const decidedAt = new Date();
+  return { provider: "integration-test", decisionBy: "test-operator", decision: "approved" as const, decidedAt, expiresAt: new Date(decidedAt.getTime() + 3_600_000) };
+}
+
 async function statements(session: SqlSession, relative: string) {
   const text = readFileSync(new URL(relative, import.meta.url), "utf8");
   for (const part of text.split(";")) {
@@ -65,7 +70,7 @@ async function prepare(session: SqlSession, patch: Record<string, string | null>
   const input: ChangeInput = { operation: "change", entity_type: "synthetic_candidate", entity_id: "TEST-1001", expected_revision: await currentRevision(session), patch, reason: "Synthetischer Test", idempotency_key: key };
   const preview = await previewChange(session, input, { ...options, ...extra });
   input.expected_revision = preview.entity_revision;
-  input.approval_id = await insertApproval(session, actor, preview, "approved", new Date(Date.now() + 3_600_000));
+  input.approval_id = await insertApproval(session, actor, preview, approval());
   return input;
 }
 
@@ -108,14 +113,14 @@ test("MySQL-History bleibt atomar, selektiv und wiederholbar", { skip: url ? fal
   const restoreInput: ChangeInput = { operation: "restore", entity_type: "synthetic_candidate", entity_id: "TEST-1001", expected_revision: await currentRevision(session), patch: { telephone: "+49-000-111" }, reason: "Telefon zurueck", idempotency_key: "restore-phone-0001", source_event_id: String(phoneEvent?.event_id) };
   const restorePreview = await previewChange(session, restoreInput, options);
   restoreInput.expected_revision = restorePreview.entity_revision;
-  const restoreApproval = await insertApproval(session, actor, restorePreview, "approved", new Date(Date.now() + 3_600_000));
+  const restoreApproval = await insertApproval(session, actor, restorePreview, approval());
   const restored = await applyChange(session, { ...restoreInput, approval_id: restoreApproval }, actor, options);
   assert.equal(restored.status, "applied");
   assert.equal((await row(session))?.telephone, "+49-000-111");
   assert.equal((await row(session))?.address, "Teststrasse B");
 
   const stale = await previewChange(session, { operation: "change", entity_type: "synthetic_candidate", entity_id: "TEST-1001", expected_revision: restored.revision, patch: { telephone: "+49-000-999" }, reason: "Spaeter Konflikt", idempotency_key: "stale-phone-0001" }, options);
-  const staleApproval = await insertApproval(session, actor, stale, "approved", new Date(Date.now() + 3_600_000));
+  const staleApproval = await insertApproval(session, actor, stale, approval());
   await change(session, { telephone: "+49-000-444" }, "newer-phone-0001");
   await assert.rejects(() => applyChange(session, { operation: "change", entity_type: "synthetic_candidate", entity_id: "TEST-1001", expected_revision: stale.entity_revision, patch: { telephone: "+49-000-999" }, reason: "Spaeter Konflikt", idempotency_key: "stale-phone-0001", approval_id: staleApproval }, actor, options), (error: unknown) => error instanceof CrmError && error.code === "REVISION_CONFLICT");
   assert.equal((await row(session))?.telephone, "+49-000-444");
@@ -142,7 +147,7 @@ test("MySQL-History bleibt atomar, selektiv und wiederholbar", { skip: url ? fal
   const caughtUp = await archiveDue(session, { async put(key, body) { archive.set(key, body); } });
   assert.equal(caughtUp.archived, 1);
 
-  await assert.rejects(() => change(session, { telephone: "+49-000-000" }, "real-schema-0001").then(() => previewChange(session, { operation: "change", entity_type: "candidate", entity_id: "1", expected_revision: "0", patch: { telephone: "1" }, reason: "Nicht geprueft", idempotency_key: "real-schema-0001" }, options)), (error: unknown) => error instanceof Error && /nicht geprueft/.test(error.message));
+  await assert.rejects(() => change(session, { telephone: "+49-000-000" }, "real-schema-0001").then(() => previewChange(session, { operation: "change", entity_type: "candidate", entity_id: "1", expected_revision: "0", patch: { telephone: "1" }, reason: "Nicht freigegeben", idempotency_key: "real-schema-0001" }, options)), (error: unknown) => error instanceof Error && /Feld ist nicht freigegeben/.test(error.message));
 
   await session.release();
 });
