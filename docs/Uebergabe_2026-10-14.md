@@ -2,7 +2,7 @@
 
 Adel hat den laufenden Stand geprueft. Suche, Profil, Statistik, Freigabeliste und der neue Build funktionieren. Diese Notiz ist der Punkt, an dem Denis weiterarbeiten kann. Sie beschreibt den deployten Stand, nicht die aelteren Statusdokumente.
 
-Nachtrag vom 16. Oktober 2026: Telefonfilter, XML-Export und gespeicherte Filterketten liegen in diesem Branch. Der zuletzt deployte Produktionsstand vor diesem Push bleibt Commit 1dc8f4c und Deployment 893da7ea-5973-4204-a244-6a53789bfdbd. Ein Push dieses Branches deployed nur das Manufact-MCP, nicht den Worker.
+Nachtrag vom 16. Oktober 2026: Telefonfilter, XML-Export und gespeicherte Filterketten liegen in diesem Branch. Der zuletzt deployte Produktionsstand vor diesem Push bleibt Commit 1dc8f4c und Deployment 893da7ea-5973-4204-a244-6a53789bfdbd. Ein Push dieses Branches deployed nur das Manufact-MCP, nicht den Worker. Commit dieser Aenderung ist 364d236.
 
 ## Wo der Stand liegt
 
