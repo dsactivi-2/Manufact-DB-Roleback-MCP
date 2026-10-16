@@ -246,8 +246,10 @@
       "evaluate_search_query_intent",
       "review_candidate_note",
       "photo_review",
-      "biometric_comparison"
+      "biometric_comparison",
+      "import"
     ],
+    "candidate_xml_export": "crm_export_kandidaten_xml",
     "core_crm_requires_typesafe": false,
     "invent_external_evaluator_calls": false,
     "new_server_later_phases": {
@@ -256,7 +258,7 @@
       "items": [
         "own_screens",
         "typesafe",
-        "imports_exports",
+        "imports",
         "ranking_photos_biometrics"
       ]
     },

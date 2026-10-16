@@ -25,7 +25,7 @@ const runtime = fs.existsSync(localPath)
 fs.writeFileSync(localPath, JSON.stringify(runtime, null, 2));
 const allowed = {
   idk_kandidati: ["kandidat_id", "kandidat_ime", "kandidat_prezime", "kandidat_status",
-    "kandidat_datumrodjenja", "kandidat_drzavljanstvo_vrsta", "kandidat_group"],
+    "kandidat_datumrodjenja", "kandidat_drzavljanstvo_vrsta", "kandidat_group", "kandidat_mobitel"],
   idk_companies: ["company_id", "company_name", "company_country", "company_status"],
   idk_nalozi: ["nalog_id", "nalog_naziv", "nalog_opis", "nalog_status"],
   idk_kandidat_radno_iskustvo: ["kri_kandidat_id", "kri_pozicija", "kri_darum_od", "kri_datum_do"],

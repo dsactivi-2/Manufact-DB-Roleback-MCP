@@ -240,6 +240,27 @@ export interface CandidateArgs {
   limit?: number;
   cursor?: string;
   count_only?: boolean;
+  telefon?: string;
+  ukljuci_telefon?: boolean;
+  koraci?: CandidateArgs[];
+}
+
+export function phoneDigits(value: string): string {
+  const digits = value.replace(/[^0-9]/g, "");
+  let national = digits;
+  if (national.startsWith("00387")) national = national.slice(5);
+  else if (national.startsWith("387")) national = national.slice(3);
+  if (national.startsWith("0")) national = national.slice(1);
+  return national;
+}
+
+function phoneMatch(value: string): { sql: string; params: string[] } {
+  const digits = phoneDigits(value);
+  if (digits.length < 6 || digits.length > 15) throw new Error("Broj telefona mora imati 6 do 15 cifara.");
+  const stored = "REGEXP_REPLACE(IFNULL(k.kandidat_mobitel, ''), '[^0-9]', '')";
+  const withoutCountry = "CASE WHEN " + stored + " LIKE '00387%' THEN SUBSTRING(" + stored + ", 6) WHEN " + stored + " LIKE '387%' THEN SUBSTRING(" + stored + ", 4) ELSE " + stored + " END";
+  const national = "CASE WHEN (" + withoutCountry + ") LIKE '0%' THEN SUBSTRING((" + withoutCountry + "), 2) ELSE (" + withoutCountry + ") END";
+  return { sql: national + " LIKE ?", params: ["%" + digits + "%"] };
 }
 
 export function buildCandidateSearch(args: CandidateArgs = {}): ReadPlan {
@@ -249,22 +270,78 @@ export function buildCandidateSearch(args: CandidateArgs = {}): ReadPlan {
   const size = pageSize(args.page_size ?? args.limit);
   const clauses: string[] = [];
   const params: SqlParams = [];
-  if (!args.archived) clauses.push("k.kandidat_status <> 3");
-  if (args.name) {
-    const name = nameMatch(args.name);
-    if (name) {
-      clauses.push(name.sql);
-      params.push(...name.params);
+  const own: CandidateArgs = {
+    name: args.name, eu_buerger: args.eu_buerger, alter_von: args.alter_von, alter_bis: args.alter_bis,
+    position_text: args.position_text, berufsgruppe_id: args.berufsgruppe_id, sprache: args.sprache,
+    niveau: args.niveau, fertigkeit: args.fertigkeit, archived: args.archived, telefon: args.telefon,
+  };
+  const steps = [...(args.koraci ?? [])];
+  if (Object.values(own).some((value) => value !== undefined) || steps.length === 0) steps.push(own);
+  let excludeArchived = true;
+  let archiveDecided = false;
+  let ageFrom: number | undefined;
+  let ageTo: number | undefined;
+  let citizenship: boolean | undefined;
+  for (const step of steps) {
+    if (step.archived !== undefined) {
+      if (!archiveDecided) {
+        excludeArchived = step.archived !== true;
+        archiveDecided = true;
+      } else if (step.archived === false) excludeArchived = true;
+    }
+    if (step.name) {
+      const name = nameMatch(step.name);
+      if (name) {
+        clauses.push(name.sql);
+        params.push(...name.params);
+      }
+    }
+    if (step.eu_buerger !== undefined) {
+      if (citizenship !== undefined && citizenship !== step.eu_buerger) clauses.push("1 = 0");
+      else if (citizenship === undefined) {
+        const match = citizenshipMatch(step.eu_buerger);
+        clauses.push(match.sql);
+        params.push(...match.params);
+      }
+      citizenship = step.eu_buerger;
+    }
+    if (step.alter_von !== undefined) ageFrom = ageFrom === undefined ? step.alter_von : Math.max(ageFrom, step.alter_von);
+    if (step.alter_bis !== undefined) ageTo = ageTo === undefined ? step.alter_bis : Math.min(ageTo, step.alter_bis);
+    if (step.position_text || step.berufsgruppe_id) {
+      const term = step.position_text ?? step.berufsgruppe_id;
+      const position = positionMatch("w.kri_pozicija", String(term));
+      clauses.push("EXISTS (SELECT 1 FROM idk_kandidat_radno_iskustvo w WHERE w.kri_kandidat_id = k.kandidat_id AND " + position.sql + ")");
+      params.push(...position.params);
+    }
+    if (step.sprache || step.niveau) {
+      const column = step.fertigkeit === "lesen" ? "kj_citanje" : step.fertigkeit === "schreiben" ? "kj_pisanje" : "kj_slusanje";
+      const level = levelMatch("j." + column, step.niveau);
+      if (step.sprache) {
+        const spoken = languageNames(step.sprache);
+        const exists = spoken.names.map((spokenName) => {
+          const spellings = storedSpellings(spokenName);
+          const nameSql = "(" + spellings.map(() => accentEquals("TRIM(j.kj_naziv)")).join(" OR ") + ")";
+          const pieces = ["j.kj_kandidatid = k.kandidat_id", nameSql];
+          if (level) pieces.push(level.sql);
+          return "EXISTS (SELECT 1 FROM idk_kandidat_jezici j WHERE " + pieces.join(" AND ") + ")";
+        });
+        clauses.push(spoken.mode === "or" ? "(" + exists.join(" OR ") + ")" : exists.join(" AND "));
+        for (const spokenName of spoken.names) params.push(...storedSpellings(spokenName), ...(level?.params ?? []));
+      } else if (level) {
+        clauses.push("EXISTS (SELECT 1 FROM idk_kandidat_jezici j WHERE j.kj_kandidatid = k.kandidat_id AND " + level.sql + ")");
+        params.push(...level.params);
+      }
+    }
+    if (step.telefon) {
+      const phone = phoneMatch(step.telefon);
+      clauses.push(phone.sql);
+      params.push(...phone.params);
     }
   }
-  if (args.eu_buerger !== undefined) {
-    const citizenship = citizenshipMatch(args.eu_buerger);
-    clauses.push(citizenship.sql);
-    params.push(...citizenship.params);
-  }
-  if (args.alter_von !== undefined || args.alter_bis !== undefined) {
-    const from = args.alter_von ?? 0;
-    const to = args.alter_bis ?? 150;
+  if (excludeArchived) clauses.unshift("k.kandidat_status <> 3");
+  if (ageFrom !== undefined || ageTo !== undefined) {
+    const from = ageFrom ?? 0;
+    const to = ageTo ?? 150;
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to > 150 || from > to) {
       throw new Error("Alter muss zwischen 0 und 150 liegen.");
     }
@@ -272,31 +349,7 @@ export function buildCandidateSearch(args: CandidateArgs = {}): ReadPlan {
     clauses.push("TIMESTAMPDIFF(YEAR, k.kandidat_datumrodjenja, CURRENT_DATE) BETWEEN ? AND ?");
     params.push(from, to);
   }
-  if (args.position_text || args.berufsgruppe_id) {
-    const term = args.position_text ?? args.berufsgruppe_id;
-    const position = positionMatch("w.kri_pozicija", String(term));
-    clauses.push("EXISTS (SELECT 1 FROM idk_kandidat_radno_iskustvo w WHERE w.kri_kandidat_id = k.kandidat_id AND " + position.sql + ")");
-    params.push(...position.params);
-  }
-  if (args.sprache || args.niveau) {
-    const column = args.fertigkeit === "lesen" ? "kj_citanje" : args.fertigkeit === "schreiben" ? "kj_pisanje" : "kj_slusanje";
-    const level = levelMatch("j." + column, args.niveau);
-    if (args.sprache) {
-      const spoken = languageNames(args.sprache);
-      const exists = spoken.names.map((spokenName) => {
-        const spellings = storedSpellings(spokenName);
-        const nameSql = "(" + spellings.map(() => accentEquals("TRIM(j.kj_naziv)")).join(" OR ") + ")";
-        const pieces = ["j.kj_kandidatid = k.kandidat_id", nameSql];
-        if (level) pieces.push(level.sql);
-        return "EXISTS (SELECT 1 FROM idk_kandidat_jezici j WHERE " + pieces.join(" AND ") + ")";
-      });
-      clauses.push(spoken.mode === "or" ? "(" + exists.join(" OR ") + ")" : exists.join(" AND "));
-      for (const spokenName of spoken.names) params.push(...storedSpellings(spokenName), ...(level?.params ?? []));
-    } else if (level) {
-      clauses.push("EXISTS (SELECT 1 FROM idk_kandidat_jezici j WHERE j.kj_kandidatid = k.kandidat_id AND " + level.sql + ")");
-      params.push(...level.params);
-    }
-  }
+  const includePhone = args.ukljuci_telefon === true || steps.some((step) => Boolean(step.telefon || step.ukljuci_telefon));
   const countSql = "SELECT COUNT(DISTINCT k.kandidat_id) AS total_count FROM idk_kandidati k " + whereSql(clauses);
   const rowParams = params.slice();
   const rowClauses = clauses.slice();
@@ -304,8 +357,9 @@ export function buildCandidateSearch(args: CandidateArgs = {}): ReadPlan {
     rowClauses.push("k.kandidat_id < ?");
     rowParams.push(cursorValue(args.cursor));
   }
+  const phoneColumn = includePhone ? "k.kandidat_mobitel AS telefon," : "";
   const rowSql = [
-    "SELECT k.kandidat_id, k.kandidat_ime, k.kandidat_prezime, k.kandidat_status,",
+    "SELECT k.kandidat_id, k.kandidat_ime, k.kandidat_prezime, k.kandidat_status, " + phoneColumn,
     "TIMESTAMPDIFF(YEAR, k.kandidat_datumrodjenja, CURRENT_DATE) AS alter_jahre",
     "FROM idk_kandidati k " + whereSql(rowClauses),
     "ORDER BY k.kandidat_id DESC",

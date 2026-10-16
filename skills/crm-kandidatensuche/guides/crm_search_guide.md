@@ -52,6 +52,6 @@ Eine Liste lädt 50 Zeilen pro Seite und geht mit dem zurückgegebenen Cursor we
 
 ## Verfügbare Funktionen und Antwort
 
-Nur tatsächlich veröffentlichte Tools verwenden. TypeSafe, `get_capabilities`, semantische Bewertung, Notizprüfung, Fotoanalyse, Biometrie, Export und Import sind nicht registriert. Aenderungs- und Freigabewerkzeuge erscheinen nur, wenn `CRM_MUTATION_TOOLS_ENABLED=true` ist; ihr Ablauf steht in references/writes.md. Keine externen Evaluator-Aufrufe erfinden oder CRM-Text dorthin senden. Kernsuche muss ohne TypeSafe funktionieren.
+Nur tatsächlich veröffentlichte Tools verwenden. crm_export_kandidaten_xml exportiert dieselbe Kandidatensuche als XML, hoechstens 1000 Zeilen, ohne E-Mail, Adresse oder Geburtsdatum. Die Telefonnummer kommt nur mit ukljuci_telefon oder einem Telefonfilter hinein. TypeSafe, `get_capabilities`, semantische Bewertung, Notizprüfung, Fotoanalyse, Biometrie und Import sind nicht registriert. Aenderungs- und Freigabewerkzeuge erscheinen nur, wenn `CRM_MUTATION_TOOLS_ENABLED=true` ist; ihr Ablauf steht in references/writes.md. Keine externen Evaluator-Aufrufe erfinden oder CRM-Text dorthin senden. Kernsuche muss ohne TypeSafe funktionieren.
 
 Nur die verlangte Ergebnisart liefern. Wesentliche Einschränkungen knapp nennen: Archiv, unbekannte Werte, Sprachdimension, Bewertungsdatum, bestätigte Berufserweiterungen oder Cap. Bei fehlender Verbindung oder Autorisierung keine Ergebnisse erfinden.

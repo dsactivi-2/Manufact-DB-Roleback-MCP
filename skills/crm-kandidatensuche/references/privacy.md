@@ -3,7 +3,7 @@
 ## What a read may return
 
 - Retrieve and return only fields needed for the explicit request.
-- A candidate search row is id, first name, last name, numeric status, and derived age. It has no birth date, contact data, address, citizenship value, documents, or notes.
+- A candidate search row is id, first name, last name, numeric status, and derived age. It has no birth date, email, address, citizenship value, documents, or notes. The mobile number is included only when the user searched by phone or asked the XML export to include it.
 - A profile adds group, status label, birth date, language levels for listening, reading, and writing, experience position and dates, and education. Omit the birth date from the answer unless the user asked for the date, the age, or the profile.
 - Do not expand from a candidate to companies, assignments, or other people unless asked.
 - Prefer a count or an aggregate when names are unnecessary.

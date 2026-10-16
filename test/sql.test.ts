@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assertSeparateInfrastructure } from "../src/guard.ts";
-import { buildCandidateSearch, buildCompanySearch, buildCrmQuery, buildResolveBeruf } from "../src/sql.ts";
+import { buildCandidateSearch, buildCompanySearch, buildCrmQuery, buildResolveBeruf, phoneDigits } from "../src/sql.ts";
 
 test("Kandidatensuche leitet das Alter ab und zaehlt leere Staatsangehoerigkeit mit", () => {
   const plan = buildCandidateSearch({ eu_buerger: false, sprache: "Deutsch", niveau: "B1" });
@@ -74,6 +74,33 @@ test("Berufsvarianten starten keine Kandidatensuche", () => {
   const plan = buildResolveBeruf({ begriff: "Fahrer" });
   assert.match(plan.sql, /kri_pozicija/);
   assert.equal(plan.sql.includes("kandidat_ime"), false);
+});
+
+test("Telefonfilter normalisiert die Nummer und laesst sie sonst weg", () => {
+  assert.equal(phoneDigits("+387 61 123-456"), "61123456");
+  assert.equal(phoneDigits("061/123-456"), "61123456");
+  const plain = buildCandidateSearch({ name: "Ana" });
+  assert.equal(plain.rowSql.includes("kandidat_mobitel"), false);
+  assert.equal(plain.countSql.includes("kandidat_mobitel"), false);
+  const filtered = buildCandidateSearch({ telefon: "00387 61 123 456" });
+  assert.match(filtered.countSql, /kandidat_mobitel/);
+  assert.match(filtered.rowSql, /kandidat_mobitel AS telefon/);
+  assert.deepEqual(filtered.countParams, ["%61123456%"]);
+  const included = buildCandidateSearch({ name: "Ana", ukljuci_telefon: true });
+  assert.equal(included.countSql.includes("kandidat_mobitel"), false);
+  assert.match(included.rowSql, /kandidat_mobitel AS telefon/);
+  assert.throws(() => buildCandidateSearch({ telefon: "123" }), /6 do 15/);
+});
+
+test("gespeicherte Filterkette wird zusammen und nur enger angewandt", () => {
+  const plan = buildCandidateSearch({ koraci: [{ position_text: "Elektriker", alter_von: 20, alter_bis: 40 }, { sprache: "Deutsch", niveau: "B1", alter_von: 25, alter_bis: 30 }] });
+  assert.equal(plan.countSql.match(/EXISTS/g)?.length, 2);
+  assert.ok(plan.countParams.includes(25));
+  assert.ok(plan.countParams.includes(30));
+  assert.equal(plan.countParams.includes(20), false);
+  assert.equal(plan.countParams.includes(40), false);
+  const conflict = buildCandidateSearch({ koraci: [{ eu_buerger: true }, { eu_buerger: false }] });
+  assert.match(conflict.countSql, /1 = 0/);
 });
 
 test("alter Hyperdrive und alter Worker sind verboten", () => {

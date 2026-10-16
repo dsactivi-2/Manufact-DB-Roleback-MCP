@@ -1,6 +1,6 @@
 # MCP tool contracts
 
-The registered read tools are `crm_search_kandidaten`, `crm_search_companies`, `crm_search_nalozi`, `crm_beruf_report`, `crm_resolve_beruf`, `crm_kandidat_profile`, `crm_stats`, `crm_list_tables`, `crm_describe_table`, `crm_entity_policy_list`, and `crm_search_guide`.
+The registered read tools are `crm_search_kandidaten`, `crm_export_kandidaten_xml`, `crm_search_companies`, `crm_search_nalozi`, `crm_beruf_report`, `crm_resolve_beruf`, `crm_kandidat_profile`, `crm_stats`, `crm_list_tables`, `crm_describe_table`, `crm_entity_policy_list`, and `crm_search_guide`.
 
 `crm_query` exists only as an internal function. The worker route `/v1/read/query` answers `SQL_GATEWAY_DISABLED`. Do not expose or call it.
 
@@ -20,4 +20,4 @@ The guide resources serve `skills/crm-kandidatensuche/guides`. The short `crm_se
 
 ## Not a tool
 
-Scoring, duplicate detection, profession classification, note review, photo review, biometrics, import, export, and deletion are not registered. `DELETE` and `DROP` are not worker operations. Do not invent those calls.
+`crm_export_kandidaten_xml` repeats the candidate search filters and returns XML. It uses the search allowlist only: id, first name, last name, status, and derived age. It adds kandidat_mobitel only when ukljuci_telefon is true or a telefon filter is set. It does not add email, address, birth date, or notes. One response holds at most 1000 rows; `truncated` and `next_cursor` continue the same filters. Scoring, duplicate detection, profession classification, note review, photo review, biometrics, import, and deletion are not registered. `DELETE` and `DROP` are not worker operations. Do not invent those calls.

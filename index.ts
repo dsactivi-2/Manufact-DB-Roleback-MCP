@@ -22,6 +22,9 @@ import {
   runStats,
   type Db,
 } from "./src/read.js";
+import { collectCandidateExport, EXPORT_MAX_ROWS } from "./src/xml-export.js";
+import type { CandidateArgs } from "./src/sql.js";
+import { deleteFilterCache, listFilterCaches, rememberFilterCache, resolveCandidateQuery } from "./src/filter-cache.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
 const mutating = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -71,6 +74,14 @@ function ok(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data) }], structuredContent: data };
 }
 
+async function cachedCandidateRead(ctx: AuthCtx | undefined, args: object) {
+  const plan = resolveCandidateQuery(args);
+  const data = await performRead(ctx, "/v1/read/candidates", plan.query, () => runCandidateSearch(db(), plan.query)) as { total_count?: number; count?: number };
+  if (!plan.save) return { ...data, cache_id: plan.cache_id, parent_cache_id: plan.parent_id };
+  const saved = rememberFilterCache({ naziv: plan.naziv, parent_id: plan.parent_id, steps: plan.steps, total_count: Number(data.total_count ?? data.count ?? 0) });
+  return { ...data, cache_id: saved.id, cache_naziv: saved.naziv, parent_cache_id: saved.parent_id, filter_koraci: saved.steps.length };
+}
+
 export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
   assertSeparateInfrastructure(env);
   assertMcpMutationConfiguration(env);
@@ -110,7 +121,7 @@ server.app.use("/mcp", async (c, next) => {
   server.tool({
   name: "crm_search_kandidaten",
   title: "Kandidaten suchen",
-  description: "Kandidaten nur mit den Filtern suchen, die der Nutzer genannt hat. Ein Vor- und Nachname allein ist eine reine Namenssuche: Beruf, Sprache, Alter und EU-Status nicht hinzufuegen. name nimmt Vorname, Nachname oder beides; jedes Wort muss in Vorname oder Nachname vorkommen, Grossschreibung und Diakritika sind egal. position_text sucht in der Berufserfahrung und versteht dieselbe Taetigkeit unter einem gebraeuchlichen Namen, zum Beispiel vozac/Fahrer/driver, elektricar/Elektriker, konobar/Kellner. Keine verwandten Berufe ergaenzen. alter_von und alter_bis sind inklusive vollendete Jahre von 0 bis 150; ohne Geburtsdatum kein Treffer. sprache akzeptiert den gespeicherten oder gesprochenen Namen, zum Beispiel Njemački, njemacki, Deutsch oder German, ebenso Engleski/English. niveau ist ein Mindestniveau. Mehrere gesetzte Filter gelten zusammen. Archivstatus 3 bleibt ausgeschlossen, bis archived=true. Hoechstens 50 Zeilen. Geburtsdatum wird nicht ausgegeben.",
+  description: "Kandidaten nur mit den Filtern suchen, die der Nutzer genannt hat. Ein Vor- und Nachname allein ist eine reine Namenssuche: Beruf, Sprache, Alter und EU-Status nicht hinzufuegen. name nimmt Vorname, Nachname oder beides; jedes Wort muss in Vorname oder Nachname vorkommen, Grossschreibung und Diakritika sind egal. telefon sucht in kandidat_mobitel und gibt die Nummer nur in diesen Trefferzeilen aus. position_text sucht in der Berufserfahrung und versteht dieselbe Taetigkeit unter einem gebraeuchlichen Namen, zum Beispiel vozac/Fahrer/driver, elektricar/Elektriker, konobar/Kellner. Keine verwandten Berufe ergaenzen. alter_von und alter_bis sind inklusive vollendete Jahre von 0 bis 150; ohne Geburtsdatum kein Treffer. sprache akzeptiert den gespeicherten oder gesprochenen Namen, zum Beispiel njemacki, Deutsch oder German, ebenso Engleski/English. niveau ist ein Mindestniveau. Mehrere gesetzte Filter gelten zusammen. Archivstatus 3 bleibt ausgeschlossen, bis archived=true. Hoechstens 50 Zeilen. Geburtsdatum wird nicht ausgegeben.",
   inputSchema: z.object({
     name: z.string().min(1).describe("Nur setzen, wenn der Nutzer einen Namen nennt. Vorname, Nachname oder beides. Jedes Wort muss in Vorname oder Nachname vorkommen.").optional(),
     eu_buerger: z.boolean().describe("true: Staatsbuergerschaftstyp beginnt mit EU. false: Typ beginnt nicht mit EU oder ist NULL/leer. Ohne Wert kein EU-Filter.").optional(),
@@ -124,9 +135,65 @@ server.app.use("/mcp", async (c, next) => {
     page_size: z.number().int().min(1).max(50).optional(),
     cursor: z.string().regex(/^[0-9]+$/).optional(),
     count_only: z.boolean().optional(),
+    telefon: z.string().min(6).max(40).describe("Nur setzen, wenn der Nutzer eine Telefonnummer nennt. 6 bis 15 Ziffern; Leerzeichen, +, 00387, 387 und eine fuehrende 0 werden ignoriert. Die Nummer steht nur in diesen Trefferzeilen.").optional(),
+    cache_id: z.string().regex(/^fc_[0-9a-f]{16}$/).describe("Vorher gespeicherter Filter. Die neue Suche gilt nur innerhalb dieser Menge.").optional(),
+    naziv: z.string().min(1).max(80).describe("Name der gespeicherten Mini-Menge. Nur zusammen mit einem neuen Filter.").optional(),
   }).strict(),
   annotations: readOnly,
-}, async (args, ctx) => ok(await performRead(ctx, "/v1/read/candidates", args, () => runCandidateSearch(db(), args))));
+}, async (args, ctx) => ok(await cachedCandidateRead(ctx, args)));
+
+const candidateExportFilters = z.object({
+  name: z.string().min(1).optional(),
+  eu_buerger: z.boolean().optional(),
+  alter_von: z.number().int().min(0).max(150).optional(),
+  alter_bis: z.number().int().min(0).max(150).optional(),
+  position_text: z.string().min(1).optional(),
+  sprache: z.string().min(1).optional(),
+  niveau: z.enum(["A1", "A2", "B1", "B2", "C1", "C2", "BEZ ZNANJA"]).optional(),
+  fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
+  archived: z.boolean().optional(),
+  max_rows: z.number().int().min(1).max(EXPORT_MAX_ROWS).optional(),
+  cursor: z.string().regex(/^[0-9]+$/).optional(),
+  telefon: z.string().min(6).max(40).optional(),
+  ukljuci_telefon: z.boolean().optional(),
+  cache_id: z.string().regex(/^fc_[0-9a-f]{16}$/).optional(),
+  naziv: z.string().min(1).max(80).optional(),
+}).strict();
+
+server.tool({
+  name: "crm_export_kandidaten_xml",
+  title: "Kandidaten als XML exportieren",
+  description: "Exportiert die zur Suche passenden Kandidaten als XML. Nur die Filter setzen, die der Nutzer nennt. Standardfelder: ID, Vorname, Nachname, Status und abgeleitetes Alter. ukljuci_telefon=true oder ein telefon-Filter nimmt kandidat_mobitel in das XML auf. E-Mail, Adresse, Geburtsdatum und Notizen werden nicht exportiert. Eine Antwort enthaelt hoechstens 1000 Zeilen; truncated und next_cursor setzen den Export fort. Admin-Rolle erforderlich.",
+  inputSchema: candidateExportFilters,
+  annotations: readOnly,
+}, async (args, ctx) => {
+  assertAdmin(ctx);
+  const plan = resolveCandidateQuery(args);
+  const search = (page: Record<string, unknown>) => {
+    const body = { ...plan.query, ...page, koraci: plan.query.koraci };
+    if (cloudflareTransport()) return createWorkerClient(databaseEnv).post("/v1/read/candidates", body, actorFor(ctx)) as Promise<{ total_count: number; has_more: boolean; next_cursor: string | null; rows: Array<Record<string, unknown>> }>;
+    return runCandidateSearch(db(), body as CandidateArgs);
+  };
+  const result = await collectCandidateExport(search, plan.query, { maxRows: args.max_rows ?? EXPORT_MAX_ROWS, cursor: args.cursor });
+  const saved = plan.save ? rememberFilterCache({ naziv: plan.naziv, parent_id: plan.parent_id, steps: plan.steps, total_count: result.total_count }) : null;
+  return { content: [{ type: "text" as const, text: result.xml }], structuredContent: { ...result, cache_id: saved?.id ?? plan.cache_id, cache_naziv: saved?.naziv ?? null, parent_cache_id: saved?.parent_id ?? plan.parent_id } };
+});
+
+server.tool({
+  name: "crm_filter_cache_lista",
+  title: "Gespeicherte Filtermengen",
+  description: "Zeigt die in diesem Serverprozess gespeicherten Mini-Mengen. Jede Menge ist eine Filterkette, kein zweites CRM. Ein Neustart leert die Liste.",
+  inputSchema: z.object({}).strict(),
+  annotations: readOnly,
+}, async (_args, ctx) => { assertAdmin(ctx); return ok({ rows: listFilterCaches() }); });
+
+server.tool({
+  name: "crm_filter_cache_obrisi",
+  title: "Filtermengen loeschen",
+  description: "Loescht eine gespeicherte Mini-Menge. Engere Mengen, die daraus schon erzeugt wurden, behalten ihre eigene Filterkette.",
+  inputSchema: z.object({ cache_id: z.string().regex(/^fc_[0-9a-f]{16}$/) }).strict(),
+  annotations: readOnly,
+}, async (args, ctx) => { assertAdmin(ctx); return ok({ deleted: deleteFilterCache(args.cache_id) }); });
 
 server.tool({
   name: "crm_search_companies",

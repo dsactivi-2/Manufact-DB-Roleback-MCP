@@ -3,6 +3,14 @@ import { z } from "zod";
 const shortText = z.string().max(500);
 const cursor = z.string().regex(/^[0-9]+$/);
 const pageSize = z.number().int().min(1).max(50);
+const candidateStep = z.object({
+  name: shortText.optional(), eu_buerger: z.boolean().optional(),
+  alter_von: z.number().int().min(0).max(150).optional(),
+  alter_bis: z.number().int().min(0).max(150).optional(),
+  position_text: shortText.optional(), sprache: shortText.optional(),
+  niveau: shortText.optional(), fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
+  archived: z.boolean().optional(), telefon: shortText.optional(),
+}).strict();
 export const readSchemas = {
   candidates: z.object({
     name: shortText.optional(), eu_buerger: z.boolean().optional(),
@@ -12,6 +20,8 @@ export const readSchemas = {
     niveau: shortText.optional(), fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
     archived: z.boolean().optional(), page_size: pageSize.optional(),
     cursor: cursor.optional(), count_only: z.boolean().optional(),
+    telefon: shortText.optional(), ukljuci_telefon: z.boolean().optional(),
+    koraci: z.array(candidateStep).max(12).optional(),
   }).strict(),
   companies: z.object({ q: shortText.optional(), country: shortText.optional(),
     status: z.number().int().optional(), page_size: pageSize.optional(), cursor: cursor.optional() }).strict(),
