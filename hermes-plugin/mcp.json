@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "crm": {
+      "type": "streamable-http",
+      "url": "https://keen-forge-ldf39.run.mcp-use.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${CRM_MCP_SERVER_TOKEN}"
+      }
+    }
+  }
+}

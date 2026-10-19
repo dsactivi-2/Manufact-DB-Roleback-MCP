@@ -1,0 +1,12 @@
+interface:
+  display_name: "CRM-Kandidatensuche"
+  short_description: "CRM lesen und freigegebene Änderungen führen"
+  default_prompt: "Mujo udri — nutze $crm-kandidatensuche für die genannte read-only CRM-Suche."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "cloud-crm-mcp"
+      description: "Connected CRM MCP. Read tools are the default. History and change tools exist only when the server registers them. Do not call the old Worker."
+      transport: "streamable_http"
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "manufact-crm",
+  "version": "1.0.0",
+  "description": "Search and profile Jobstep CRM candidates, companies, and assignments, and run an explicit history, change, restore, or approval through the Manufact CRM MCP.",
+  "author": {
+    "name": "Manufact",
+    "url": "https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP"
+  },
+  "homepage": "https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP/tree/feature/cloudflare-read-gateway-20261007/hermes-plugin",
+  "repository": "https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP",
+  "license": "MIT",
+  "keywords": [
+    "crm",
+    "kandidaten",
+    "jobstep",
+    "manufact",
+    "mcp"
+  ],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "crm": {
+          "trust": "untrusted"
+        }
+      }
+    }
+  }
+}
