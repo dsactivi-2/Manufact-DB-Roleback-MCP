@@ -200,7 +200,7 @@ server.tool({
   title: "Filtermengen loeschen",
   description: "Loescht eine gespeicherte Mini-Menge. Engere Mengen, die daraus schon erzeugt wurden, behalten ihre eigene Filterkette.",
   inputSchema: z.object({ cache_id: z.string().regex(/^fc_[0-9a-f]{16}$/) }).strict(),
-  annotations: readOnly,
+  annotations: mutating,
 }, async (args, ctx) => { assertCandidateRead(ctx); return ok({ deleted: deleteFilterCache(args.cache_id, actorFor(ctx).subject) }); });
 
 server.tool({

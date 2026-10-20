@@ -162,6 +162,8 @@ test("MCP mutation alati su skriveni po defaultu i kompletni uz opt-in", async (
   for (const name of ["crm_history_list", "crm_change_preview", "crm_change_apply", "crm_restore_preview", "crm_restore_apply", "crm_write_request_approval", "crm_write_approval_list", "crm_write_decide"]) {
     assert.ok(enabledNames.includes(name), name);
   }
+  const cacheDelete = disabled.result.tools.find((tool: { name: string }) => tool.name === "crm_filter_cache_obrisi");
+  assert.equal(cacheDelete.annotations.readOnlyHint, false);
 });
 
 test("MCP read granice odgovaraju zajednickom ugovoru", async () => {
