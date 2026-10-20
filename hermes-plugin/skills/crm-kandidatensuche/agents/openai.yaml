@@ -5,7 +5,7 @@ interface:
 dependencies:
   tools:
     - type: "mcp"
-      value: "cloud-crm-mcp"
+      value: "manufact-db-rollback-mcp"
       description: "Connected CRM MCP. Read tools are the default. History and change tools exist only when the server registers them. Do not call the old Worker."
       transport: "streamable_http"
 policy:

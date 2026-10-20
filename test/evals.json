@@ -84,7 +84,7 @@
     "A successful request activated by Mujo udri ends with the exact sentence: Mujo je udario Fatu.",
     "A failed, denied, or incomplete request does not use the success sentence."
   ],
-  "version": "0.2.0-cloud-crm",
+  "version": "0.2.0-manufact-db-rollback",
   "execution": {
     "fixture_policy": "synthetic_only",
     "status": "adapted_not_executed_against_mysql",
@@ -461,6 +461,6 @@
     }
   ],
   "adapted_from": "candidate-search/tests/evals.json 0.1.0-beta.2",
-  "server": "cloud-crm-mcp",
+  "server": "manufact-db-rollback-mcp",
   "role": "test_specification_not_a_runtime_skill"
 }

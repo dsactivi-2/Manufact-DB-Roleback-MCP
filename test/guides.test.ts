@@ -26,7 +26,7 @@ test("embedded guide uses the new server page rules", () => {
   };
   const markdown = readGuide("markdown");
   assert.equal(guide.version, "1.4.0");
-  assert.equal(guide.server, "cloud-crm-mcp");
+  assert.equal(guide.server, "manufact-db-rollback-mcp");
   assert.equal(guide.limits.list_page_size, 50);
   assert.equal(guide.limits.count_is_complete, true);
   assert.equal(guide.limits.no_default_limit_200, true);

@@ -15,7 +15,7 @@ registerHooks({
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { createCloudCrmServer } = await import("../index.ts");
+const { createManufactDbRollbackServer } = await import("../index.ts");
 
 const legacyEnv = { CRM_MCP_SERVER_TOKEN: "test-token" };
 const oauthEnv = {
@@ -33,7 +33,7 @@ function mcp(path: string, init: RequestInit = {}) {
 }
 
 test("ohne OAuth bleibt der gemeinsame Token die Anmeldung", async () => {
-  const server = createCloudCrmServer(legacyEnv);
+  const server = createManufactDbRollbackServer(legacyEnv);
   const missing = await server.fetch(mcp("/mcp", { method: "POST" }));
   assert.equal(missing.status, 401);
   const discovery = await server.fetch(mcp("/.well-known/oauth-protected-resource"));
@@ -43,7 +43,7 @@ test("ohne OAuth bleibt der gemeinsame Token die Anmeldung", async () => {
 });
 
 test("OAuth nennt den Anmeldewunsch und laesst den alten Token weiter", async () => {
-  const server = createCloudCrmServer(oauthEnv);
+  const server = createManufactDbRollbackServer(oauthEnv);
   const missing = await server.fetch(mcp("/mcp", { method: "POST", headers: { accept: "application/json" } }));
   assert.equal(missing.status, 401);
   const challenge = missing.headers.get("www-authenticate") ?? "";
@@ -65,15 +65,25 @@ test("OAuth nennt den Anmeldewunsch und laesst den alten Token weiter", async ()
     headers: { authorization: "Bearer test-token", accept: "application/json, text/event-stream", "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } }),
   }));
-  assert.notEqual(accepted.status, 401);
+  assert.equal(accepted.status, 200);
+  const body = await accepted.text();
+  const payload = JSON.parse(body.startsWith("{") ? body : body.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as {
+    result: { serverInfo: { name: string; title: string; version: string; description: string } };
+  };
+  assert.deepEqual(payload.result.serverInfo, {
+    name: "manufact-db-rollback-mcp",
+    title: "Manufact DB Rollback MCP",
+    version: "1.0.0",
+    description: "CRM MCP server for search and approved changes on separate infrastructure.",
+  });
 });
 
 test("halbes OAuth startet nicht", () => {
-  assert.throws(() => createCloudCrmServer({ OAUTH_ISSUER: "https://login.example.com/" }), /OAUTH_AUTHORIZATION_ENDPOINT fehlt/);
+  assert.throws(() => createManufactDbRollbackServer({ OAUTH_ISSUER: "https://login.example.com/" }), /OAUTH_AUTHORIZATION_ENDPOINT fehlt/);
 });
 
 test("WorkOS-Adresse schaltet die Anmeldung ohne einzelne Endpunkte ein", async () => {
-  const server = createCloudCrmServer({
+  const server = createManufactDbRollbackServer({
     CRM_MCP_SERVER_TOKEN: "test-token",
     MCP_USE_OAUTH_WORKOS_SUBDOMAIN: "balanced-lantern-65-staging.authkit.app",
     OAUTH_RESOURCE: "https://crm.example.com/mcp",

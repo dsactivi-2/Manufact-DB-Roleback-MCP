@@ -4,7 +4,7 @@ import { mutationSchemas } from "./contracts/mutations.js";
 import { assertMcpMutationConfiguration } from "./src/config.js";
 import { createOAuthProvider } from "./src/auth.js";
 import { actorFromOAuth, actorFromSharedToken, type Actor } from "./src/identity.js";
-import { isCrmAdmin, statsVisibleTo } from "./src/permissions.js";
+import { canReadCandidates, isCrmAdmin, statsVisibleTo } from "./src/permissions.js";
 import { createWorkerClient } from "./src/worker-client.js";
 import { openDatabase } from "./src/db.js";
 import { assertSeparateInfrastructure } from "./src/guard.js";
@@ -47,18 +47,24 @@ function assertAdmin(ctx: AuthCtx | undefined): void {
   if (!isCrmAdmin(actorFor(ctx))) throw new Error("Lesen ist fuer diese Rolle nicht erlaubt.");
 }
 
+function assertCandidateRead(ctx: AuthCtx | undefined): void {
+  if (!canReadCandidates(actorFor(ctx))) throw new Error("Lesen ist fuer diese Rolle nicht erlaubt.");
+}
+
 function cloudflareTransport(): boolean {
   return (databaseEnv.CRM_TRANSPORT ?? "").trim() === "cloudflare";
 }
 
 async function performRead(ctx: AuthCtx | undefined, path: string, args: unknown, direct: () => Promise<unknown>) {
-  assertAdmin(ctx);
+  if (path === "/v1/read/candidates" || path === "/v1/read/profile" || path === "/v1/read/professions" || path === "/v1/read/resolve_profession" || path === "/v1/read/stats") assertCandidateRead(ctx);
+  else assertAdmin(ctx);
   if (!cloudflareTransport()) return direct();
   return createWorkerClient(databaseEnv).post(path, args, actorFor(ctx));
 }
 
 async function performWrite(ctx: AuthCtx | undefined, path: string, args: unknown) {
-  assertAdmin(ctx);
+  const actor = actorFor(ctx);
+  if (actor.subject === "shared-token" || actor.subject === "unknown") throw new Error("Schreiben ist fuer diese Rolle nicht erlaubt.");
   return createWorkerClient(databaseEnv).post(path, args, actorFor(ctx));
 }
 
@@ -75,14 +81,15 @@ function ok(data: unknown) {
 }
 
 async function cachedCandidateRead(ctx: AuthCtx | undefined, args: object) {
-  const plan = resolveCandidateQuery(args);
+  const owner = actorFor(ctx).subject;
+  const plan = resolveCandidateQuery({ ...args, owner });
   const data = await performRead(ctx, "/v1/read/candidates", plan.query, () => runCandidateSearch(db(), plan.query)) as { total_count?: number; count?: number };
   if (!plan.save) return { ...data, cache_id: plan.cache_id, parent_cache_id: plan.parent_id };
-  const saved = rememberFilterCache({ naziv: plan.naziv, parent_id: plan.parent_id, steps: plan.steps, total_count: Number(data.total_count ?? data.count ?? 0) });
+  const saved = rememberFilterCache({ owner, naziv: plan.naziv, parent_id: plan.parent_id, steps: plan.steps, total_count: Number(data.total_count ?? data.count ?? 0) });
   return { ...data, cache_id: saved.id, cache_naziv: saved.naziv, parent_cache_id: saved.parent_id, filter_koraci: saved.steps.length };
 }
 
-export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
+export function createManufactDbRollbackServer(env: NodeJS.ProcessEnv = process.env) {
   assertSeparateInfrastructure(env);
   assertMcpMutationConfiguration(env);
   databaseEnv = env;
@@ -90,9 +97,9 @@ export function createCloudCrmServer(env: NodeJS.ProcessEnv = process.env) {
   if (env.CRM_TRANSPORT && !["direct", "cloudflare"].includes(env.CRM_TRANSPORT)) throw new Error("Nepoznat CRM_TRANSPORT.");
   const oauth = createOAuthProvider(env);
   const config = {
-    name: "cloud-crm-mcp",
-    title: "Cloud CRM MCP",
-    version: "0.1.0",
+    name: "manufact-db-rollback-mcp",
+    title: "Manufact DB Rollback MCP",
+    version: "1.0.0",
     description: "CRM MCP server for search and approved changes on separate infrastructure.",
     skills: true,
   } as const;
@@ -163,19 +170,20 @@ const candidateExportFilters = z.object({
 server.tool({
   name: "crm_export_kandidaten_xml",
   title: "Kandidaten als XML exportieren",
-  description: "Exportiert die zur Suche passenden Kandidaten als XML. Nur die Filter setzen, die der Nutzer nennt. Standardfelder: ID, Vorname, Nachname, Status und abgeleitetes Alter. ukljuci_telefon=true oder ein telefon-Filter nimmt kandidat_mobitel in das XML auf. E-Mail, Adresse, Geburtsdatum und Notizen werden nicht exportiert. Eine Antwort enthaelt hoechstens 1000 Zeilen; truncated und next_cursor setzen den Export fort. Admin-Rolle erforderlich.",
+  description: "Exportiert die zur Suche passenden Kandidaten als XML. Nur die Filter setzen, die der Nutzer nennt. Standardfelder: ID, Vorname, Nachname, Status und abgeleitetes Alter. ukljuci_telefon=true oder ein telefon-Filter nimmt kandidat_mobitel in das XML auf. E-Mail, Adresse, Geburtsdatum und Notizen werden nicht exportiert. Eine Antwort enthaelt hoechstens 1000 Zeilen; truncated und next_cursor setzen den Export fort.",
   inputSchema: candidateExportFilters,
   annotations: readOnly,
 }, async (args, ctx) => {
-  assertAdmin(ctx);
-  const plan = resolveCandidateQuery(args);
+  assertCandidateRead(ctx);
+  const owner = actorFor(ctx).subject;
+  const plan = resolveCandidateQuery({ ...args, owner });
   const search = (page: Record<string, unknown>) => {
     const body = { ...plan.query, ...page, koraci: plan.query.koraci };
     if (cloudflareTransport()) return createWorkerClient(databaseEnv).post("/v1/read/candidates", body, actorFor(ctx)) as Promise<{ total_count: number; has_more: boolean; next_cursor: string | null; rows: Array<Record<string, unknown>> }>;
     return runCandidateSearch(db(), body as CandidateArgs);
   };
   const result = await collectCandidateExport(search, plan.query, { maxRows: args.max_rows ?? EXPORT_MAX_ROWS, cursor: args.cursor });
-  const saved = plan.save ? rememberFilterCache({ naziv: plan.naziv, parent_id: plan.parent_id, steps: plan.steps, total_count: result.total_count }) : null;
+  const saved = plan.save ? rememberFilterCache({ owner, naziv: plan.naziv, parent_id: plan.parent_id, steps: plan.steps, total_count: result.total_count }) : null;
   return { content: [{ type: "text" as const, text: result.xml }], structuredContent: { ...result, cache_id: saved?.id ?? plan.cache_id, cache_naziv: saved?.naziv ?? null, parent_cache_id: saved?.parent_id ?? plan.parent_id } };
 });
 
@@ -185,7 +193,7 @@ server.tool({
   description: "Zeigt die in diesem Serverprozess gespeicherten Mini-Mengen. Jede Menge ist eine Filterkette, kein zweites CRM. Ein Neustart leert die Liste.",
   inputSchema: z.object({}).strict(),
   annotations: readOnly,
-}, async (_args, ctx) => { assertAdmin(ctx); return ok({ rows: listFilterCaches() }); });
+}, async (_args, ctx) => { assertCandidateRead(ctx); return ok({ rows: listFilterCaches(actorFor(ctx).subject) }); });
 
 server.tool({
   name: "crm_filter_cache_obrisi",
@@ -193,7 +201,7 @@ server.tool({
   description: "Loescht eine gespeicherte Mini-Menge. Engere Mengen, die daraus schon erzeugt wurden, behalten ihre eigene Filterkette.",
   inputSchema: z.object({ cache_id: z.string().regex(/^fc_[0-9a-f]{16}$/) }).strict(),
   annotations: readOnly,
-}, async (args, ctx) => { assertAdmin(ctx); return ok({ deleted: deleteFilterCache(args.cache_id) }); });
+}, async (args, ctx) => { assertCandidateRead(ctx); return ok({ deleted: deleteFilterCache(args.cache_id, actorFor(ctx).subject) }); });
 
 server.tool({
   name: "crm_search_companies",
@@ -291,7 +299,7 @@ server.resource({
   name: "crm_search_guide_json",
   uri: GUIDE_JSON_URI,
   title: "CRM-Suchregeln",
-  description: "Strukturierte Regeln fuer Cloud CRM MCP, Version 1.4.0.",
+  description: "Strukturierte Regeln fuer Manufact DB Rollback MCP, Version 1.4.0.",
   mimeType: "application/json",
 }, (uri) => ({
   contents: [{ uri: uri.href, mimeType: "application/json", text: readGuide("json") }],
@@ -301,7 +309,7 @@ server.resource({
   name: "crm_search_guide_markdown",
   uri: GUIDE_MARKDOWN_URI,
   title: "CRM-Suchleitfaden",
-  description: "Lesbarer Leitfaden fuer Cloud CRM MCP, Version 1.4.0.",
+  description: "Lesbarer Leitfaden fuer Manufact DB Rollback MCP, Version 1.4.0.",
   mimeType: "text/markdown",
 }, (uri) => ({
   contents: [{ uri: uri.href, mimeType: "text/markdown", text: readGuide("markdown") }],
@@ -374,5 +382,5 @@ server.resource({
   return server;
 }
 
-const server = createCloudCrmServer();
+const server = createManufactDbRollbackServer();
 export default server;

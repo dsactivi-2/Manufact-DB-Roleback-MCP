@@ -15,7 +15,7 @@ registerHooks({
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { createCloudCrmServer } = await import("../../index.ts");
+const { createManufactDbRollbackServer } = await import("../../index.ts");
 const { insertApproval } = await import("../../src/history.ts");
 const { exportPem, MCP_ISSUER } = await import("../../src/identity.ts");
 const { openMysqlUrl } = await import("../../src/sql-session.ts");
@@ -91,7 +91,7 @@ test("MCP OAuth tok izvrsava preview, apply, history i restore kroz Worker i MyS
   }) as typeof fetch;
 
   try {
-    const server = createCloudCrmServer({
+    const server = createManufactDbRollbackServer({
       CRM_TRANSPORT: "cloudflare", CRM_WORKER_BASE_URL: "https://worker.test", CRM_WORKER_SERVICE_TOKEN: workerToken,
       CRM_IDENTITY_ASSERTION_PRIVATE_KEY: assertionPrivate, CRM_MUTATION_TOOLS_ENABLED: "true", CRM_MUTATION_POLICY_VERSION: "test-policy-v1",
       OAUTH_ISSUER: oauthIssuer, OAUTH_AUTHORIZATION_ENDPOINT: "https://login.test/authorize", OAUTH_TOKEN_ENDPOINT: "https://login.test/token",

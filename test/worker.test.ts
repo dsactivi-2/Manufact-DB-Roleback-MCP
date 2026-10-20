@@ -104,7 +104,7 @@ test("Mutation adapter salje tipiziran i potpisan preview zahtjev Workeru", asyn
   assert.deepEqual(response, { entity_revision: "0", preview_sha256: "f".repeat(64), fields: [] });
 });
 test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () => {
-  const { createCloudCrmServer } = await import("../index.ts");
+  const { createManufactDbRollbackServer } = await import("../index.ts");
   const { handleWorker } = await import("../src/worker/http.ts");
   const originalFetch = globalThis.fetch;
   let gatewayCalls = 0;
@@ -124,7 +124,7 @@ test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () =>
     }) });
   }) as typeof fetch;
   try {
-    const server = createCloudCrmServer({ ...settings, CRM_TRANSPORT: "cloudflare", CRM_MCP_SERVER_TOKEN: "test-token" });
+    const server = createManufactDbRollbackServer({ ...settings, CRM_TRANSPORT: "cloudflare", CRM_MCP_SERVER_TOKEN: "test-token" });
     const headers = new Headers({
       authorization: "Bearer test-token", accept: "application/json, text/event-stream", "content-type": "application/json",
     });
@@ -142,17 +142,22 @@ test("MCP crm_stats prolazi kroz gateway bez direktnog DB pristupa", async () =>
     }));
     assert.equal(callResponse.status, 200);
     const message = rpcMessage(await callResponse.text());
-    assert.equal(message.result?.isError, true);
-    assert.equal(gatewayCalls, 0);
+    assert.equal(message.result?.isError, undefined);
+    const data = JSON.parse(message.result.content[0].text) as Record<string, unknown>;
+    assert.equal(data.kandidaten, 4);
+    assert.equal(data.aktiv, 3);
+    assert.equal(Object.hasOwn(data, "firmen"), false);
+    assert.equal(Object.hasOwn(data, "auftraege"), false);
+    assert.equal(gatewayCalls, 1);
   } finally { globalThis.fetch = originalFetch; }
 });
 test("MCP mutation alati su skriveni po defaultu i kompletni uz opt-in", async () => {
-  const { createCloudCrmServer } = await import("../index.ts");
-  const disabled = await rpc(createCloudCrmServer({ ...settings, CRM_MCP_SERVER_TOKEN: "test-token" }), "tools/list", {});
+  const { createManufactDbRollbackServer } = await import("../index.ts");
+  const disabled = await rpc(createManufactDbRollbackServer({ ...settings, CRM_MCP_SERVER_TOKEN: "test-token" }), "tools/list", {});
   const disabledNames = disabled.result.tools.map((tool: { name: string }) => tool.name);
   assert.equal(disabledNames.some((name: string) => name.startsWith("crm_change_") || name.startsWith("crm_restore_") || name === "crm_history_list"), false);
 
-  const enabled = await rpc(createCloudCrmServer(mutationSettings), "tools/list", {}, 10);
+  const enabled = await rpc(createManufactDbRollbackServer(mutationSettings), "tools/list", {}, 10);
   const enabledNames = enabled.result.tools.map((tool: { name: string }) => tool.name);
   for (const name of ["crm_history_list", "crm_change_preview", "crm_change_apply", "crm_restore_preview", "crm_restore_apply", "crm_write_request_approval", "crm_write_approval_list", "crm_write_decide"]) {
     assert.ok(enabledNames.includes(name), name);

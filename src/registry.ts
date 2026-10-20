@@ -5,6 +5,7 @@ export interface FieldDefinition {
   column: string;
   type: Exclude<TypedValue["type"], "null">;
   nullable: boolean;
+  writable?: boolean;
 }
 
 export interface EntityDefinition {
@@ -58,7 +59,7 @@ export const ENTITIES: readonly EntityDefinition[] = [
       { apiField: "last_name", column: "kandidat_prezime", type: "string", nullable: false },
       { apiField: "birth_date", column: "kandidat_datumrodjenja", type: "string", nullable: true },
       { apiField: "citizenship_type", column: "kandidat_drzavljanstvo_vrsta", type: "string", nullable: true },
-      { apiField: "status", column: "kandidat_status", type: "integer", nullable: false },
+      { apiField: "status", column: "kandidat_status", type: "integer", nullable: false, writable: false },
       { apiField: "group_id", column: "kandidat_group", type: "integer", nullable: false },
     ],
   },
@@ -173,7 +174,7 @@ export function publicEntityPolicies() {
     access: entity.access,
     available_access: entity.primaryKey && (entity.operations.update || entity.operations.insert) ? ["read", "approve_write", "write"] as const : ["read"] as const,
     operations: entity.operations,
-    fields: entity.fields.map((field) => ({ name: field.apiField, type: field.type, nullable: field.nullable })),
+    fields: entity.fields.map((field) => ({ name: field.apiField, type: field.type, nullable: field.nullable, writable: field.writable !== false && entity.access !== "read" })),
   }));
 }
 

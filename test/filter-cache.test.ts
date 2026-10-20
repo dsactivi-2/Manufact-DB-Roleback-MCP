@@ -8,6 +8,8 @@ test("filter cache narrows only inside the saved chain", () => {
   const first = resolveCandidateQuery({ position_text: "Elektriker", naziv: "elektricari" });
   assert.equal(first.save, true);
   const saved = rememberFilterCache({ naziv: first.naziv, parent_id: first.parent_id, steps: first.steps, total_count: 80 });
+  assert.equal(saved.owner, "shared-token");
+  assert.throws(() => resolveCandidateQuery({ cache_id: saved.id, owner: "other-user", sprache: "Deutsch" }), /ne postoji/);
   const second = resolveCandidateQuery({ cache_id: saved.id, sprache: "Deutsch" });
   assert.equal(second.parent_id, saved.id);
   assert.equal(second.steps.length, 2);

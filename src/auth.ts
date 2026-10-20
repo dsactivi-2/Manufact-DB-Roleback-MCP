@@ -7,9 +7,9 @@ export const BASELINE_SCOPE = "crm:read";
 export const SQL_SCOPE = "sql:read";
 export const ADVERTISED_SCOPES = [BASELINE_SCOPE, "candidates:read", "reports:read", SQL_SCOPE] as const;
 
-export type CloudCrmUser = { id: string };
+export type ManufactDbRollbackUser = { id: string };
 
-export function createOAuthProvider(env: NodeJS.ProcessEnv): OAuthProvider<CloudCrmUser> | undefined {
+export function createOAuthProvider(env: NodeJS.ProcessEnv): OAuthProvider<ManufactDbRollbackUser> | undefined {
   const workos = workosSettings(env);
   const issuer = workos?.issuer ?? clean(env.OAUTH_ISSUER);
   if (!issuer) return undefined;
@@ -37,9 +37,9 @@ export function createOAuthProvider(env: NodeJS.ProcessEnv): OAuthProvider<Cloud
     ...(registrationEndpoint ? { registration_endpoint: registrationEndpoint } : {}),
   };
 
-  return oauthCustomProvider<CloudCrmUser>({
+  return oauthCustomProvider<ManufactDbRollbackUser>({
     resource,
-    resourceName: "Cloud CRM MCP",
+    resourceName: "Manufact DB Rollback MCP",
     requiredScopes: workos ? [] : [BASELINE_SCOPE],
     scopesSupported,
     oauthMetadata: metadata,

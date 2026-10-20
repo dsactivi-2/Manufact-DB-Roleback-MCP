@@ -4,7 +4,7 @@ Use this only after the user explicitly asks to change CRM data, restore fields,
 
 ## Which record
 
-Call `crm_entity_policy_list` before the first write in a task. Patch API field names from that list, never table column names. One patch has 1 to 20 fields. `candidate_status` is read-only. Delete and drop do not exist.
+Call crm_entity_policy_list before the first write in a task. Patch API field names from that list, never table column names. One patch has 1 to 20 fields. The candidate field status is listed and read-only. Company and order writes also require the admin scope. Delete and drop do not exist.
 
 Candidate changes can be the person (`candidate`) or a child row (`candidate_education`, `candidate_language`, `candidate_experience`). `candidate_group` is the group catalog. Company and order are separate entities. A question about pending candidate changes means the person plus the three child types, not companies or orders.
 

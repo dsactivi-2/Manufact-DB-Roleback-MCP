@@ -344,6 +344,7 @@ function parsePatch(entity: ReturnType<typeof entityByType>, patch: Record<strin
   if (entries.length === 0) throw new CrmError("INVALID_INPUT", "Patch ist leer.");
   return entries.map(([name, value]) => {
     const field = fieldByApi(entity, name);
+    if (field.writable === false) throw new CrmError("INVALID_INPUT", "Feld ist nur lesbar.");
     if (value === null) {
       if (!field.nullable) throw new CrmError("INVALID_INPUT", "Feld darf nicht null sein.");
       return { field, after: { type: "null" } as TypedValue };

@@ -10,7 +10,7 @@ const evals = JSON.parse(readFileSync(new URL("./evals.json", import.meta.url), 
 
 test("angepasste Pruefliste gehoert zum neuen Server und nicht zum alten", () => {
   const text = JSON.stringify(evals);
-  assert.equal(evals.server, "cloud-crm-mcp");
+  assert.equal(evals.server, "manufact-db-rollback-mcp");
   assert.equal(evals.role, "test_specification_not_a_runtime_skill");
   assert.equal(text.includes("workers.dev"), false);
   assert.equal(text.includes("no-pagination-schema"), false);

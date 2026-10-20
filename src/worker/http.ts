@@ -7,8 +7,8 @@ import { applyChange, decideApproval, insertApproval, listHistory, listPendingAp
 import { actorFromSharedToken, sameSecret, verifyAssertion, WORKER_AUDIENCE, type Actor } from "../identity.js";
 import { assertIsolatedTarget, assertSafeDatabaseTarget } from "../isolation.js";
 import { archiveDue, assertNoPhysicalDelete, type ArchivePut } from "../outbox.js";
-import { canApproveWrite, canReadAll, canReadEntity, canReadMetadata, canRequestWrite, canWriteAny, isAdminOnlyEntity, statsVisibleTo } from "../permissions.js";
-import { runBerufReport, runCandidateSearch, runCompanySearch, runCrmQuery, runDescribeTable, runListTables, runOrderSearch, runProfile, runResolveBeruf, runStats, type Db } from "../read.js";
+import { canApproveWrite, canReadAll, canReadCandidates, canReadEntity, canReadMetadata, canRequestWrite, canWriteAny, isAdminOnlyEntity, statsVisibleTo } from "../permissions.js";
+import { runBerufReport, runCandidateSearch, runCompanySearch, runDescribeTable, runListTables, runOrderSearch, runProfile, runResolveBeruf, runStats, type Db } from "../read.js";
 import type { SqlSession } from "../sql-session.js";
 import { openHyperdrive, type HyperdriveBinding } from "./hyperdrive.js";
 
@@ -78,12 +78,12 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   if (path === "/v1/read/companies") { requireRead(actor, ["company"]); return runCompanySearch(db, readSchemas.companies.parse(body)); }
   if (path === "/v1/read/orders") { requireRead(actor, ["order"]); return runOrderSearch(db, readSchemas.orders.parse(body)); }
   if (path === "/v1/read/profile") { requireRead(actor, ["candidate", "candidate_education", "candidate_language", "candidate_experience"]); return runProfile(db, readSchemas.profile.parse(body).kandidat_id); }
-  if (path === "/v1/read/stats") { requireMetadataRead(actor); readSchemas.stats.parse(body); return statsVisibleTo(actor, await runStats(db) as Record<string, unknown>); }
+  if (path === "/v1/read/stats") { if (!canReadCandidates(actor)) throw forbidden("Lesen"); readSchemas.stats.parse(body); return statsVisibleTo(actor, await runStats(db) as Record<string, unknown>); }
   if (path === "/v1/read/tables") { requireMetadataRead(actor); return runListTables(db, readSchemas.tables.parse(body).search); }
   if (path === "/v1/read/describe") { requireMetadataRead(actor); return runDescribeTable(db, readSchemas.describe.parse(body).table); }
   if (path === "/v1/read/query") throw new CrmError("SQL_GATEWAY_DISABLED", "Slobodni SQL je zatvoren.", 403);
-  if (path === "/v1/read/professions" || path === "/v1/read/beruf-report") { requireRead(actor, ["candidate", "candidate_experience"]); return runBerufReport(db, readSchemas.professions.parse(body)); }
-  if (path === "/v1/read/resolve_profession" || path === "/v1/read/beruf-resolve") { requireRead(actor, ["candidate_experience"]); return runResolveBeruf(db, readSchemas.resolve_profession.parse(body)); }
+  if (path === "/v1/read/professions") { requireRead(actor, ["candidate", "candidate_experience"]); return runBerufReport(db, readSchemas.professions.parse(body)); }
+  if (path === "/v1/read/resolve_profession") { requireRead(actor, ["candidate_experience"]); return runResolveBeruf(db, readSchemas.resolve_profession.parse(body)); }
   if (path === "/v1/history/list") {
     const entityType = String(body.entity_type ?? "");
     requireAdminOnlyRead(actor, entityType);

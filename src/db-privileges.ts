@@ -24,7 +24,7 @@ export function minimalPrivileges(): TablePrivilege[] {
   const business = ENTITIES.filter((entity) => !entity.testOnly).map((entity) => ({
     table: entity.table,
     select: [...new Set([entity.primaryKey, ...entity.fields.map((field) => field.column)].filter((column): column is string => Boolean(column)))],
-    update: entity.operations.update ? entity.fields.map((field) => field.column) : [],
+    update: entity.operations.update ? entity.fields.filter((field) => field.writable !== false).map((field) => field.column) : [],
     insertColumns: entity.operations.insert ? entity.fields.map((field) => field.column) : [],
     insert: false,
     delete: false as const,

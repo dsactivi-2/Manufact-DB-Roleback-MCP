@@ -1,6 +1,6 @@
-# MCP Server built with mcp-use
+# Manufact DB Rollback MCP
 
-This is an MCP server project bootstrapped with [`create-mcp-use-app`](https://mcp-use.com/docs/typescript/getting-started/quickstart).
+This MCP server provides controlled access to the Manufact CRM through a Cloudflare read gateway, with protected history, approval, and selective rollback workflows.
 
 ## Getting Started
 
@@ -27,7 +27,7 @@ To learn more about mcp-use and MCP:
 
 Without OAuth settings, the server still expects `Authorization: Bearer` and `CRM_MCP_SERVER_TOKEN`. A token in the URL is rejected.
 
-When `OAUTH_ISSUER` is set, the server also requires `OAUTH_AUTHORIZATION_ENDPOINT`, `OAUTH_TOKEN_ENDPOINT`, `OAUTH_JWKS_URL`, and `OAUTH_RESOURCE` or `MCP_URL`. `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` can replace those four endpoint values with the WorkOS AuthKit address. The server then publishes the OAuth discovery documents and checks signed tokens. In WorkOS mode the discovery document advertises openid, profile, email, and offline_access. It does not require crm:read at the gate. WorkOS roles are mapped to CRM scopes and checked by the handlers. A shared token is only `crm:read`; it is not an admin and cannot write. `sql:read` remains in the advertised scope list, but `crm_query` is not registered and `/v1/read/query` stays closed. `OAUTH_CLIENT_SECRET` is not a server setting.
+When `OAUTH_ISSUER` is set, the server also requires `OAUTH_AUTHORIZATION_ENDPOINT`, `OAUTH_TOKEN_ENDPOINT`, `OAUTH_JWKS_URL`, and `OAUTH_RESOURCE` or `MCP_URL`. `MCP_USE_OAUTH_WORKOS_SUBDOMAIN` can replace those four endpoint values with the WorkOS AuthKit address. The server then publishes the OAuth discovery documents and checks signed tokens. In WorkOS mode the discovery document advertises openid, profile, email, and offline_access. It does not require crm:read at the gate. WorkOS roles are mapped to CRM scopes and checked by the handlers. A shared token is only a read scope. It can search candidates, open a candidate profile, run profession tools, and read candidate totals. It cannot write, approve, list companies or orders, or read table metadata. `sql:read` remains in the advertised scope list, but `crm_query` is not registered and `/v1/read/query` stays closed. `OAUTH_CLIENT_SECRET` is not a server setting.
 
 ## Deploy on Manufact Cloud
 

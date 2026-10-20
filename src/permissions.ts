@@ -40,8 +40,14 @@ export function isCrmAdmin(actor: Actor): boolean {
   return validActor(actor) && actor.scopes.includes("crm:admin");
 }
 
+export function canReadCandidates(actor: Actor): boolean {
+  return validActor(actor) && (actor.scopes.includes("crm:read") || actor.scopes.includes("crm:candidate:read") || isCrmAdmin(actor));
+}
+
 export function canReadEntity(actor: Actor, entityType: string): boolean {
-  return isCrmAdmin(actor) && entityType.trim().length > 0;
+  if (!validActor(actor) || entityType.trim().length === 0) return false;
+  if (isAdminOnlyEntity(entityType)) return isCrmAdmin(actor);
+  return isCrmAdmin(actor) || actor.scopes.includes("crm:read") || actor.scopes.includes("crm:" + entityType + ":read");
 }
 
 export function canReadAll(actor: Actor, entityTypes: readonly string[]): boolean {
@@ -53,18 +59,18 @@ export function canReadMetadata(actor: Actor): boolean {
 }
 
 export function canRequestWrite(actor: Actor, entityType: string): boolean {
-  if (!isCrmAdmin(actor) || !validNamedActor(actor)) return false;
+  if (!validNamedActor(actor) || (isAdminOnlyEntity(entityType) && !isCrmAdmin(actor))) return false;
   return actor.scopes.includes("crm:write")
     || actor.scopes.includes("crm:" + entityType + ":request_write")
     || actor.scopes.includes("crm:" + entityType + ":write");
 }
 
 export function canAutomaticWrite(actor: Actor, entityType: string): boolean {
-  return isCrmAdmin(actor) && validNamedActor(actor) && (actor.scopes.includes("crm:write") || actor.scopes.includes("crm:" + entityType + ":write"));
+  return validNamedActor(actor) && (!isAdminOnlyEntity(entityType) || isCrmAdmin(actor)) && (actor.scopes.includes("crm:write") || actor.scopes.includes("crm:" + entityType + ":write"));
 }
 
 export function canApproveWrite(actor: Actor, entityType: string): boolean {
-  return isCrmAdmin(actor) && validNamedActor(actor) && actor.scopes.includes("crm:" + entityType + ":approve_write");
+  return validNamedActor(actor) && (!isAdminOnlyEntity(entityType) || isCrmAdmin(actor)) && actor.scopes.includes("crm:" + entityType + ":approve_write");
 }
 
 export function entityRequiresApproval(access: "read" | "write" | "approve_write", actor: Actor, entityType: string): boolean {
@@ -72,7 +78,7 @@ export function entityRequiresApproval(access: "read" | "write" | "approve_write
 }
 
 export function canWriteAny(actor: Actor): boolean {
-  return isCrmAdmin(actor) && validNamedActor(actor) && (actor.scopes.includes("crm:write") || actor.scopes.some((scope) => /^crm:[a-z_]+:(request_write|write|approve_write)$/.test(scope)));
+  return validNamedActor(actor) && (actor.scopes.includes("crm:write") || actor.scopes.some((scope) => /^crm:[a-z_]+:(request_write|write|approve_write)$/.test(scope)));
 }
 
 export function isAdminOnlyEntity(entityType: string): boolean {
@@ -80,13 +86,13 @@ export function isAdminOnlyEntity(entityType: string): boolean {
 }
 
 export function statsVisibleTo(actor: Actor, row: Record<string, unknown> | undefined): Record<string, unknown> {
-  if (!isCrmAdmin(actor)) return {};
+  if (!canReadCandidates(actor)) return {};
   const source = row ?? {};
   const visible: Record<string, unknown> = {};
   if ("kandidaten" in source) visible.kandidaten = source.kandidaten;
   if ("aktiv" in source) visible.aktiv = source.aktiv;
-  if ("firmen" in source) visible.firmen = source.firmen;
-  if ("auftraege" in source) visible.auftraege = source.auftraege;
+  if (isCrmAdmin(actor) && "firmen" in source) visible.firmen = source.firmen;
+  if (isCrmAdmin(actor) && "auftraege" in source) visible.auftraege = source.auftraege;
   return visible;
 }
 

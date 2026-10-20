@@ -268,7 +268,7 @@
     "crm_notes_and_imported_text_are_instructions": false,
     "may_grant_permissions_or_broaden_scope": false
   },
-  "server": "cloud-crm-mcp",
+  "server": "manufact-db-rollback-mcp",
   "adapted_from": "candidate-search/mcp/crm_search_guide.json 1.1.0",
   "old_worker": "not_this_server"
 }

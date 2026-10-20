@@ -1,14 +1,18 @@
 {
-  "name": "cloud-crm-mcp",
+  "name": "manufact-db-rollback-mcp",
   "type": "module",
   "engines": {
     "node": ">=22.22.2"
   },
   "version": "1.0.0",
-  "description": "Cloud CRM MCP with Cloudflare reads and protected history/rollback workflows.",
-  "author": "mcp-use",
+  "description": "Manufact DB Rollback MCP with Cloudflare reads and protected history/rollback workflows.",
+  "author": "Manufact",
   "license": "MIT",
-  "homepage": "https://github.com/mcp-use/mcp-use",
+  "homepage": "https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dsactivi-2/Manufact-DB-Roleback-MCP.git"
+  },
   "keywords": [
     "mcp",
     "mcp-server",

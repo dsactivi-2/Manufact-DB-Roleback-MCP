@@ -14,7 +14,7 @@ Search output is allowlisted. Gender, religion, health data, and ethnic origin s
 
 A list page is at most 50 rows. The count is the handler aggregate, not the page length and not `TABLE_ROWS`. Offset is rejected. The old 200-row cap is not used.
 
-Company and order records are admin-only entities. Every current read handler also requires the admin scope before it runs. A denied call is not an empty result.
+Company and order records, table lists, table descriptions, and the entity policy are admin-only. Candidate search, profile, profession tools, candidate statistics, and the saved filter cache accept crm:read. A shared token carries that read scope and cannot write. A denied call is not an empty result.
 
 The guide resources serve `skills/crm-kandidatensuche/guides`. The short `crm_search_guide` tool remains the live summary. If a live tool field and the bundled guide disagree, the live tool wins.
 

@@ -7,6 +7,7 @@ export type FilterStep = Partial<Record<(typeof FILTER_KEYS)[number], string | n
 
 export interface FilterCache {
   id: string;
+  owner: string;
   naziv: string;
   parent_id: string | null;
   steps: FilterStep[];
@@ -48,9 +49,10 @@ export function resolveCandidateQuery(args: object): {
   save: boolean;
 } {
   const source = args as Record<string, unknown>;
+  const owner = typeof source.owner === "string" && source.owner.trim() ? source.owner : "shared-token";
   const cacheId = typeof source.cache_id === "string" ? source.cache_id : undefined;
   const parent = cacheId ? caches.get(cacheId) : undefined;
-  if (cacheId && !parent) throw new Error("Sacuvani filter ne postoji ili je istekao.");
+  if (cacheId && (!parent || parent.owner !== owner)) throw new Error("Sacuvani filter ne postoji ili je istekao.");
   const added = stepFrom(source);
   const steps = [...(parent?.steps ?? [])];
   if (Object.keys(added).length > 0) steps.push(added);
@@ -73,7 +75,7 @@ export function resolveCandidateQuery(args: object): {
   };
 }
 
-export function rememberFilterCache(input: { naziv?: string; parent_id: string | null; steps: FilterStep[]; total_count: number }): FilterCache {
+export function rememberFilterCache(input: { owner?: string; naziv?: string; parent_id: string | null; steps: FilterStep[]; total_count: number }): FilterCache {
   while (caches.size >= MAX_CACHES) {
     const oldest = [...caches.values()].sort((left, right) => left.created_at.localeCompare(right.created_at))[0];
     if (!oldest) break;
@@ -81,6 +83,7 @@ export function rememberFilterCache(input: { naziv?: string; parent_id: string |
   }
   const saved: FilterCache = {
     id: cacheId(),
+    owner: input.owner && input.owner.trim() ? input.owner : "shared-token",
     naziv: labelFor(input.steps, input.naziv),
     parent_id: input.parent_id,
     steps: input.steps.map((step) => ({ ...step })),
@@ -97,10 +100,12 @@ function cacheId(): string {
   return "fc_" + [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function listFilterCaches(): FilterCache[] {
-  return [...caches.values()].sort((left, right) => right.created_at.localeCompare(left.created_at));
+export function listFilterCaches(owner = "shared-token"): FilterCache[] {
+  return [...caches.values()].filter((item) => item.owner === owner).sort((left, right) => right.created_at.localeCompare(left.created_at));
 }
 
-export function deleteFilterCache(id: string): boolean {
+export function deleteFilterCache(id: string, owner = "shared-token"): boolean {
+  const found = caches.get(id);
+  if (!found || found.owner !== owner) return false;
   return caches.delete(id);
 }
