@@ -1,6 +1,7 @@
 import { sha256 } from "../canonical.js";
 import { assertWorkerConfiguration } from "../config.js";
 import { readSchemas } from "../../contracts/read.js";
+import { mutationSchemas } from "../../contracts/mutations.js";
 import { ZodError } from "zod";
 import { asCrmError, CrmError } from "../crm-error.js";
 import { applyChange, decideApproval, insertApproval, listHistory, listPendingApprovals, previewChange, requestApproval, restorePatchFromEvent, type ChangeInput } from "../history.js";
@@ -85,44 +86,47 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   if (path === "/v1/read/professions") { requireRead(actor, ["candidate", "candidate_experience"]); return runBerufReport(db, readSchemas.professions.parse(body)); }
   if (path === "/v1/read/resolve_profession") { requireRead(actor, ["candidate_experience"]); return runResolveBeruf(db, readSchemas.resolve_profession.parse(body)); }
   if (path === "/v1/history/list") {
-    const entityType = String(body.entity_type ?? "");
+    const parsed = parseMutation(mutationSchemas.history, body, env);
+    const entityType = parsed.entity_type;
     requireAdminOnlyRead(actor, entityType);
     if (!canReadEntity(actor, entityType) && !canRequestWrite(actor, entityType) && !canApproveWrite(actor, entityType)) throw forbidden("Historie");
-    return listHistory(session, entityType, String(body.entity_id ?? ""));
+    return listHistory(session, entityType, parsed.entity_id);
   }
   const requestedFault = body.fail_before;
   let failBefore: "event" | "after-commit" | undefined;
   if (env.ALLOW_TEST_ENTITIES === "true" && (requestedFault === "event" || requestedFault === "after-commit")) failBefore = requestedFault;
   const options = { allowTestEntities: env.ALLOW_TEST_ENTITIES === "true", requireApproval: env.REQUIRE_APPROVAL !== "false", now: deps.now, failBefore };
   if (path === "/v1/changes/preview") {
-    const entityType = String(body.entity_type ?? "");
+    const parsed = parseMutation(mutationSchemas.changePreview, body, env);
+    const entityType = parsed.entity_type;
     requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Aenderungsvorschau");
-    const input = changeInput(body, "change");
-    return previewChange(session, input, options);
+    return previewChange(session, changeInput(parsed, "change"), options);
   }
   if (path === "/v1/changes/apply") {
     if (env.WRITES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Schreiben ist aus.", 403);
-    const entityType = String(body.entity_type ?? "");
+    const parsed = parseMutation(mutationSchemas.changeApply, body, env);
+    const entityType = parsed.entity_type;
     requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Schreiben");
-    const input = changeInput(body, "change");
-    return applyChange(session, input, actor, options);
+    return applyChange(session, changeInput(parsed, "change"), actor, options);
   }
   if (path === "/v1/restores/preview") {
-    const entityType = String(body.entity_type ?? "");
+    const parsed = parseMutation(mutationSchemas.restorePreview, body, env);
+    const entityType = parsed.entity_type;
     requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Wiederherstellungsvorschau");
-    const patch = await restorePatchFromEvent(session, entityType, String(body.entity_id ?? ""), String(body.source_event_id ?? ""), stringList(body.fields));
-    return previewChange(session, changeInput({ ...body, patch }, "restore"), options);
+    const patch = await restorePatchFromEvent(session, entityType, parsed.entity_id, parsed.source_event_id, parsed.fields);
+    return previewChange(session, changeInput({ ...parsed, patch }, "restore"), options);
   }
   if (path === "/v1/restores/apply") {
     if (env.RESTORES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Wiederherstellen ist aus.", 403);
-    const entityType = String(body.entity_type ?? "");
+    const parsed = parseMutation(mutationSchemas.restoreApply, body, env);
+    const entityType = parsed.entity_type;
     requireAdminOnlyRead(actor, entityType);
     if (!canRequestWrite(actor, entityType)) throw forbidden("Wiederherstellen");
-    const patch = await restorePatchFromEvent(session, entityType, String(body.entity_id ?? ""), String(body.source_event_id ?? ""), stringList(body.fields));
-    return applyChange(session, changeInput({ ...body, patch }, "restore"), actor, options);
+    const patch = await restorePatchFromEvent(session, entityType, parsed.entity_id, parsed.source_event_id, parsed.fields);
+    return applyChange(session, changeInput({ ...parsed, patch }, "restore"), actor, options);
   }
   if (path === "/v1/outbox/drain") {
     if (!canWriteAny(actor)) throw new CrmError("FORBIDDEN", "Archivierung braucht eine Schreibidentitaet.", 403);
@@ -130,9 +134,9 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   }
   if (path === "/v1/approvals/decide") {
     if (env.WRITES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Schreiben ist aus.", 403);
-    const approvalId = String(body.approval_id ?? "");
-    const decision = body.decision;
-    if (decision !== "approved" && decision !== "rejected") throw new CrmError("INVALID_INPUT", "Entscheidung ist ungueltig.");
+    const parsed = parseMutation(mutationSchemas.approvalDecide, body, env);
+    const approvalId = parsed.approval_id;
+    const decision = parsed.decision;
     const rows = await session.query("SELECT preview_json FROM rb_approvals WHERE approval_id=?", [approvalId]);
     const preview = approvalPreview(rows.rows[0]?.preview_json);
     if (!canApproveWrite(actor, preview.entity_type)) throw forbidden("Freigabe");
@@ -141,14 +145,16 @@ async function route(path: string, body: Record<string, unknown>, actor: Actor, 
   }
   if (path === "/v1/approvals/request") {
     if (env.WRITES_ENABLED !== "true") throw new CrmError("WRITES_DISABLED", "Schreiben ist aus.", 403);
-    const preview = approvalPreview(body.preview);
+    const parsed = parseMutation(mutationSchemas.approvalRequest, body, env);
+    const preview = parsed.preview;
     if (!canRequestWrite(actor, preview.entity_type)) throw forbidden("Freigabeanfrage");
     requireAdminOnlyRead(actor, preview.entity_type);
     const approvalId = await requestApproval(session, actor, preview, deps.now);
     return { approval_id: approvalId, status: "pending", preview_sha256: preview.preview_sha256 };
   }
   if (path === "/v1/approvals/list") {
-    const entityType = String(body.entity_type ?? "");
+    const parsed = parseMutation(mutationSchemas.approvalList, body, env);
+    const entityType = parsed.entity_type;
     requireAdminOnlyRead(actor, entityType);
     if (!canApproveWrite(actor, entityType)) throw forbidden("Freigabeliste");
     return listPendingApprovals(session, entityType);
@@ -221,9 +227,16 @@ function changeInput(body: Record<string, unknown>, operation: "change" | "resto
   };
 }
 
-function stringList(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new CrmError("INVALID_INPUT", "Feldliste ist ungueltig.");
-  return value as string[];
+function mutationBody(body: Record<string, unknown>, env: WorkerEnv): Record<string, unknown> {
+  if (env.ALLOW_TEST_ENTITIES === "true" && (body.fail_before === "event" || body.fail_before === "after-commit")) {
+    const { fail_before: _fault, ...rest } = body;
+    return rest;
+  }
+  return body;
+}
+
+function parseMutation<T>(schema: { parse(value: unknown): T }, body: Record<string, unknown>, env: WorkerEnv): T {
+  return schema.parse(mutationBody(body, env));
 }
 
 function approvalPreview(value: unknown) {

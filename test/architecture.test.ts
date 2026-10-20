@@ -58,8 +58,7 @@ test("Worker trennt Health, Lesetoken und produktives Schema", async () => {
   assert.equal(healthBody.result.database, "not-checked");
   assert.equal(healthBody.result.writes_enabled, true);
 
-  async function call(actor: { issuer: string; subject: string; scopes: string[] }, path: string, schema: string, host = "127.0.0.1") {
-    const raw = "{}";
+  async function call(actor: { issuer: string; subject: string; scopes: string[] }, path: string, schema: string, host = "127.0.0.1", raw = "{}") {
     const assertion = await signAssertion(privatePem, { actor, audience: WORKER_AUDIENCE, requestSha256: sha256(raw) });
     return handleWorker(new Request("https://worker.test" + path, { method: "POST", headers: { authorization: "Bearer svc", "x-crm-identity": assertion, "content-type": "application/json" }, body: raw }), env, {
       host,
@@ -67,7 +66,11 @@ test("Worker trennt Health, Lesetoken und produktives Schema", async () => {
     });
   }
 
-  const shared = await call(actorFromSharedToken(), "/v1/changes/apply", "rollback_test");
+  const shared = await call(actorFromSharedToken(), "/v1/changes/apply", "rollback_test", "127.0.0.1", JSON.stringify({
+    entity_type: "synthetic_candidate", entity_id: "TEST-1", expected_revision: "0",
+    patch: { telephone: "+49-1" }, reason: "Kontrollierter Test", idempotency_key: "preview-test-0001",
+    approval_id: "11111111-1111-4111-8111-111111111111",
+  }));
   assert.equal(shared.status, 403);
   const sharedBody = await shared.json() as { error: { code: string } };
   assert.equal(sharedBody.error.code, "FORBIDDEN");
@@ -255,4 +258,45 @@ test("interni approval inbox veze odluku za neizmijenjeni preview", async () => 
   assert.equal(committed, true);
   await assert.rejects(() => decideApproval(decideSession, approvalId, "approved", writer, new Date("2026-10-13T12:00:00.000Z")), /eigene Freigabe/);
   await assert.rejects(() => requestApproval(requestSession, writer, { ...preview, reason: "Izmijenjeno" }, new Date()), /veraendert/);
+});
+
+test("Worker odbija mutation ulaz koji MCP ugovor ne prihvata", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const privatePem = await exportPem(pair.privateKey, "pkcs8");
+  const publicPem = await exportPem(pair.publicKey, "spki");
+  const env = { MCP_SERVICE_TOKEN: "svc", IDENTITY_ASSERTION_PUBLIC_KEY: publicPem, WRITES_ENABLED: "false", ALLOW_TEST_ENTITIES: "false" };
+  const actor = { issuer: "manufact-db-rollback-mcp", subject: "user-1", scopes: ["crm:read", "crm:write"] };
+  const base = {
+    entity_type: "synthetic_candidate", entity_id: "TEST-1", expected_revision: "0",
+    patch: { telephone: "+49-1" }, reason: "Kontrollierter Test", idempotency_key: "preview-test-0001",
+  };
+  async function post(body: Record<string, unknown>) {
+    const raw = JSON.stringify(body);
+    const assertion = await signAssertion(privatePem, { actor, audience: WORKER_AUDIENCE, requestSha256: sha256(raw) });
+    const queries: string[] = [];
+    const response = await handleWorker(new Request("https://worker.test/v1/changes/preview", {
+      method: "POST",
+      headers: { authorization: "Bearer svc", "x-crm-identity": assertion, "content-type": "application/json" },
+      body: raw,
+    }), env, {
+      host: "127.0.0.1",
+      openSession: async () => ({
+        async query(sql: string) {
+          queries.push(sql);
+          if (sql.includes("DATABASE()")) return { rows: [{ selected_database: "rollback_test" }], affectedRows: 1 };
+          throw new Error("BUSINESS_QUERY");
+        },
+        async release() {},
+      }),
+    });
+    return { response, queries };
+  }
+  const extra = await post({ ...base, unexpected: true });
+  assert.equal(extra.response.status, 400);
+  assert.equal((await extra.response.json() as { error: { code: string } }).error.code, "INVALID_INPUT");
+  assert.deepEqual(extra.queries, ["SELECT DATABASE() AS selected_database"]);
+  const long = await post({ ...base, patch: { telephone: "a".repeat(10_001) } });
+  assert.equal(long.response.status, 400);
+  assert.equal((await long.response.json() as { error: { code: string } }).error.code, "INVALID_INPUT");
+  assert.equal(long.queries.some((sql) => sql.includes("START TRANSACTION")), false);
 });
