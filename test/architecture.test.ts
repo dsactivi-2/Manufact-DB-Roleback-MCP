@@ -16,6 +16,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const { sha256 } = await import("../src/canonical.ts");
+const { canonicalJson } = await import("../src/canonical.ts");
+const { archiveDue } = await import("../src/outbox.ts");
 const { assertMcpMutationConfiguration, workerConfigurationErrors } = await import("../src/config.ts");
 const { assertSeparateInfrastructure } = await import("../src/guard.ts");
 const { actorFromOAuth, actorFromSharedToken, canWrite, exportPem, principalHash, signAssertion, verifyAssertion, WORKER_AUDIENCE } = await import("../src/identity.ts");
@@ -299,4 +301,58 @@ test("Worker odbija mutation ulaz koji MCP ugovor ne prihvata", async () => {
   assert.equal(long.response.status, 400);
   assert.equal((await long.response.json() as { error: { code: string } }).error.code, "INVALID_INPUT");
   assert.equal(long.queries.some((sql) => sql.includes("START TRANSACTION")), false);
+});
+
+test("R2 arhiva cuva sva hashirana polja dogadjaja", async () => {
+  const event = {
+    event_id: "11111111-1111-4111-8111-111111111111",
+    entity_type: "synthetic_candidate",
+    entity_id: "TEST-1",
+    revision_before: "0",
+    revision_after: "1",
+    operation: "change",
+    actor_issuer: "manufact-db-rollback-mcp",
+    actor_subject: "user-1",
+    request_id: "22222222-2222-4222-8222-222222222222",
+    source_event_id: null,
+    created_at: "2026-10-20 13:00:00.000000",
+    typed_changes: { telephone: { before: { type: "null" }, after: { type: "string", value: "+49-1" }, field_revision_before: "0", field_revision_after: "1" } },
+    reason: "Kontrollierter Test",
+  };
+  const stored = { ...event, event_sha256: sha256(canonicalJson(event)) };
+  const queries: string[] = [];
+  const archived = new Map<string, string>();
+  const session = {
+    async query(sql: string) {
+      queries.push(sql);
+      if (sql.startsWith("SELECT event_id FROM rb_outbox")) return { rows: [{ event_id: event.event_id }], affectedRows: 1 };
+      if (sql.startsWith("SELECT event_id, entity_type")) return { rows: [stored], affectedRows: 1 };
+      if (sql.startsWith("UPDATE rb_outbox SET status='archived'")) return { rows: [], affectedRows: 1 };
+      return { rows: [], affectedRows: 1 };
+    },
+    async release() {},
+  };
+  const result = await archiveDue(session, { async put(key, body) { archived.set(key, body); } }, new Date("2026-10-20T13:00:00.000Z"));
+  assert.equal(result.archived, 1);
+  const body = archived.get("events/" + event.event_id + ".json");
+  assert.equal(body, canonicalJson(event));
+  assert.equal(sha256(body ?? ""), stored.event_sha256);
+  assert.match(body ?? "", /actor_issuer/);
+  assert.match(body ?? "", /request_id/);
+  assert.equal(body?.includes("event_sha256"), false);
+  const broken = { ...stored, reason: "promijenjeno" };
+  const rejected: string[] = [];
+  const rejectSession = {
+    async query(sql: string) {
+      if (sql.startsWith("SELECT event_id FROM rb_outbox")) return { rows: [{ event_id: event.event_id }], affectedRows: 1 };
+      if (sql.startsWith("SELECT event_id, entity_type")) return { rows: [broken], affectedRows: 1 };
+      if (sql.startsWith("UPDATE rb_outbox SET status='archived'")) throw new Error("ARCHIVED");
+      return { rows: [], affectedRows: 1 };
+    },
+    async release() {},
+  };
+  const rejectedResult = await archiveDue(rejectSession, { async put(key) { rejected.push(key); } }, new Date("2026-10-20T13:00:00.000Z"));
+  assert.equal(rejectedResult.archived, 0);
+  assert.deepEqual(rejected, []);
+  assert.equal(queries.some((sql) => sql.includes("actor_issuer")), true);
 });
