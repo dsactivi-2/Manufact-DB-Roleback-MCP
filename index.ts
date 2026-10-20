@@ -130,12 +130,12 @@ server.app.use("/mcp", async (c, next) => {
   title: "Kandidaten suchen",
   description: "Kandidaten nur mit den Filtern suchen, die der Nutzer genannt hat. Ein Vor- und Nachname allein ist eine reine Namenssuche: Beruf, Sprache, Alter und EU-Status nicht hinzufuegen. name nimmt Vorname, Nachname oder beides; jedes Wort muss in Vorname oder Nachname vorkommen, Grossschreibung und Diakritika sind egal. telefon sucht in kandidat_mobitel und gibt die Nummer nur in diesen Trefferzeilen aus. position_text sucht in der Berufserfahrung und versteht dieselbe Taetigkeit unter einem gebraeuchlichen Namen, zum Beispiel vozac/Fahrer/driver, elektricar/Elektriker, konobar/Kellner. Keine verwandten Berufe ergaenzen. alter_von und alter_bis sind inklusive vollendete Jahre von 0 bis 150; ohne Geburtsdatum kein Treffer. sprache akzeptiert den gespeicherten oder gesprochenen Namen, zum Beispiel njemacki, Deutsch oder German, ebenso Engleski/English. niveau ist ein Mindestniveau. Mehrere gesetzte Filter gelten zusammen. Archivstatus 3 bleibt ausgeschlossen, bis archived=true. Hoechstens 50 Zeilen. Geburtsdatum wird nicht ausgegeben.",
   inputSchema: z.object({
-    name: z.string().min(1).describe("Nur setzen, wenn der Nutzer einen Namen nennt. Vorname, Nachname oder beides. Jedes Wort muss in Vorname oder Nachname vorkommen.").optional(),
+    name: z.string().min(1).max(500).describe("Nur setzen, wenn der Nutzer einen Namen nennt. Vorname, Nachname oder beides. Jedes Wort muss in Vorname oder Nachname vorkommen.").optional(),
     eu_buerger: z.boolean().describe("true: Staatsbuergerschaftstyp beginnt mit EU. false: Typ beginnt nicht mit EU oder ist NULL/leer. Ohne Wert kein EU-Filter.").optional(),
     alter_von: z.number().int().min(0).max(150).describe("Inklusive untere Altersgrenze in vollendeten Jahren, 0 bis 150.").optional(),
     alter_bis: z.number().int().min(0).max(150).describe("Inklusive obere Altersgrenze in vollendeten Jahren, 0 bis 150; muss groesser oder gleich alter_von sein.").optional(),
-    position_text: z.string().min(1).describe("Nur setzen, wenn der Nutzer einen Beruf nennt. Gespeicherte Position, auch ohne Diakritika oder unter dem gebraeuchlichen Namen derselben Taetigkeit.").optional(),
-    sprache: z.string().min(1).describe("Nur setzen, wenn der Nutzer eine Sprache nennt. Njemački, njemacki, Deutsch, German, Engleski oder English und die anderen gespeicherten Sprachen.").optional(),
+    position_text: z.string().min(1).max(500).describe("Nur setzen, wenn der Nutzer einen Beruf nennt. Gespeicherte Position, auch ohne Diakritika oder unter dem gebraeuchlichen Namen derselben Taetigkeit.").optional(),
+    sprache: z.string().min(1).max(500).describe("Nur setzen, wenn der Nutzer eine Sprache nennt. Njemački, njemacki, Deutsch, German, Engleski oder English und die anderen gespeicherten Sprachen.").optional(),
     niveau: z.enum(["A1", "A2", "B1", "B2", "C1", "C2", "BEZ ZNANJA"]).describe("Mindestniveau A1-C2. BEZ ZNANJA trifft auch Bez znanja, Bezznanja und Bez poznavanja, nicht leere Werte.").optional(),
     fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
     archived: z.boolean().describe("Standard false/ausgelassen: Kandidaten mit Status 3 werden ausgeschlossen. true: archivierte Kandidaten werden nicht aufgrund von Status 3 ausgeschlossen.").optional(),
@@ -150,12 +150,12 @@ server.app.use("/mcp", async (c, next) => {
 }, async (args, ctx) => ok(await cachedCandidateRead(ctx, args)));
 
 const candidateExportFilters = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).max(500).optional(),
   eu_buerger: z.boolean().optional(),
   alter_von: z.number().int().min(0).max(150).optional(),
   alter_bis: z.number().int().min(0).max(150).optional(),
-  position_text: z.string().min(1).optional(),
-  sprache: z.string().min(1).optional(),
+  position_text: z.string().min(1).max(500).optional(),
+  sprache: z.string().min(1).max(500).optional(),
   niveau: z.enum(["A1", "A2", "B1", "B2", "C1", "C2", "BEZ ZNANJA"]).optional(),
   fertigkeit: z.enum(["zuhoeren", "lesen", "schreiben"]).optional(),
   archived: z.boolean().optional(),
@@ -207,7 +207,7 @@ server.tool({
   name: "crm_search_companies",
   title: "Firmen suchen",
   description: "Firmen nach Name, Land oder numerischem CRM-Status suchen. q sucht im Firmennamen, country vergleicht das gespeicherte Land exakt. Der numerische company_status hat in diesem Server noch keine verifizierte fachliche Werteliste; status daher nur verwenden, wenn der konkrete CRM-Statuswert bereits aus dem Nutzerkontext stammt. 50 Zeilen pro Seite.",
-  inputSchema: z.object({ q: z.string().optional(), country: z.string().optional(), status: z.number().int().describe("Exakter numerischer company_status aus dem CRM. Keine Statusnummer raten; nur verwenden, wenn der Wert explizit bekannt ist.").optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
+  inputSchema: z.object({ q: z.string().max(500).optional(), country: z.string().max(500).optional(), status: z.number().int().describe("Exakter numerischer company_status aus dem CRM. Keine Statusnummer raten; nur verwenden, wenn der Wert explizit bekannt ist.").optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/companies", args, () => runCompanySearch(db(), args))));
 
@@ -215,7 +215,7 @@ server.tool({
   name: "crm_search_nalozi",
   title: "Aufträge suchen",
   description: "Aufträge nach Freitext oder numerischem CRM-Status suchen. q sucht in Titel und Beschreibung. Der numerische nalog_status hat in diesem Server noch keine verifizierte fachliche Werteliste; status daher nur verwenden, wenn der konkrete CRM-Statuswert bereits aus dem Nutzerkontext stammt.",
-  inputSchema: z.object({ q: z.string().optional(), status: z.number().int().describe("Exakter numerischer nalog_status aus dem CRM. Keine Statusnummer raten; nur verwenden, wenn der Wert explizit bekannt ist.").optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
+  inputSchema: z.object({ q: z.string().max(500).optional(), status: z.number().int().describe("Exakter numerischer nalog_status aus dem CRM. Keine Statusnummer raten; nur verwenden, wenn der Wert explizit bekannt ist.").optional(), page_size: z.number().int().min(1).max(50).optional(), cursor: z.string().regex(/^[0-9]+$/).optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/orders", args, () => runOrderSearch(db(), args))));
 
@@ -223,7 +223,7 @@ server.tool({
   name: "crm_beruf_report",
   title: "Berufsreport",
   description: "Berufsreport fuer eine oder mehrere vom Nutzer genannte Berufs- oder Positionsbezeichnungen. Verwenden, wenn eine aggregierte Auswertung statt einer Kandidatenliste gewuenscht ist. Liefert die Anzahl unterschiedlicher passender Kandidaten, Treffer je Suchbegriff und die haeufigsten gespeicherten Positionstexte; eine Sprachverteilung wird nur berechnet, wenn sprache angegeben ist. Archivierte Kandidaten bleiben standardmaessig ausgeschlossen.",
-  inputSchema: z.object({ begriffe: z.array(z.string().min(1)).min(1).describe("Vom Nutzer gemeinte Berufs- oder Positionsbegriffe, z. B. Elektriker. Jeder Eintrag bildet eine eigene Treffergruppe."), archived: z.boolean().optional(), sprache: z.string().optional(), top_positionen: z.number().int().min(1).max(50).describe("Maximale Anzahl der haeufigsten passenden Positionstexte im Report; Standard 15, Maximum 50.").optional() }).strict(),
+  inputSchema: z.object({ begriffe: z.array(z.string().min(1).max(500)).min(1).max(30).describe("Vom Nutzer gemeinte Berufs- oder Positionsbegriffe, z. B. Elektriker. Jeder Eintrag bildet eine eigene Treffergruppe."), archived: z.boolean().optional(), sprache: z.string().max(500).optional(), top_positionen: z.number().int().min(1).max(50).describe("Maximale Anzahl der haeufigsten passenden Positionstexte im Report; Standard 15, Maximum 50.").optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/professions", args, () => runBerufReport(db(), args))));
 
@@ -231,7 +231,7 @@ server.tool({
   name: "crm_resolve_beruf",
   title: "Berufsbezeichnungen auflösen",
   description: "Berufsvarianten anzeigen. Startet selbst keine Kandidatensuche.",
-  inputSchema: z.object({ begriff: z.string().min(1), archived: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional() }).strict(),
+  inputSchema: z.object({ begriff: z.string().min(1).max(500), archived: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/resolve_profession", args, () => runResolveBeruf(db(), args))));
 
@@ -255,7 +255,7 @@ server.tool({
   name: "crm_list_tables",
   title: "Erlaubte Tabellen",
   description: "Erlaubte Tabellen auflisten.",
-  inputSchema: z.object({ search: z.string().optional() }).strict(),
+  inputSchema: z.object({ search: z.string().max(500).optional() }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/tables", args, () => runListTables(db(), args.search))));
 
@@ -263,7 +263,7 @@ server.tool({
   name: "crm_describe_table",
   title: "Tabelle beschreiben",
   description: "Spalten einer erlaubten Tabelle.",
-  inputSchema: z.object({ table: z.string() }).strict(),
+  inputSchema: z.object({ table: z.string().min(1).max(500) }).strict(),
   annotations: readOnly,
 }, async (args, ctx) => ok(await performRead(ctx, "/v1/read/describe", args, () => runDescribeTable(db(), args.table))));
 

@@ -163,3 +163,18 @@ test("MCP mutation alati su skriveni po defaultu i kompletni uz opt-in", async (
     assert.ok(enabledNames.includes(name), name);
   }
 });
+
+test("MCP read granice odgovaraju zajednickom ugovoru", async () => {
+  const { createManufactDbRollbackServer } = await import("../index.ts");
+  const server = createManufactDbRollbackServer({ ...settings, CRM_MCP_SERVER_TOKEN: "test-token" });
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => { calls++; return Response.json({ data: {} }); }) as typeof fetch;
+  try {
+    const longName = await rpc(server, "tools/call", { name: "crm_search_kandidaten", arguments: { name: "a".repeat(501) } }, 20);
+    assert.equal(longName.result?.isError, true);
+    const tooMany = await rpc(server, "tools/call", { name: "crm_beruf_report", arguments: { begriffe: Array.from({ length: 31 }, () => "fahrer") } }, 30);
+    assert.equal(tooMany.error !== undefined || tooMany.result?.isError === true, true);
+    assert.equal(calls, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
